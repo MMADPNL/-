@@ -1,1 +1,482 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
 
+    <title>LIMBO DOGS</title>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #080b12;
+            color: white;
+        }
+
+        .app {
+            max-width: 520px;
+            margin: auto;
+            padding: 18px;
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .logo {
+            font-size: 25px;
+            font-weight: 900;
+        }
+
+        .balance {
+            background: #151a25;
+            border: 1px solid #252c3a;
+            border-radius: 14px;
+            padding: 9px 13px;
+            font-size: 14px;
+        }
+
+        .balance span {
+            font-weight: bold;
+        }
+
+        .game {
+            min-height: 300px;
+            border-radius: 24px;
+            background: linear-gradient(
+                145deg,
+                #111827,
+                #090c13
+            );
+            border: 1px solid #242c3b;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+            box-shadow: 0 15px 50px rgba(0,0,0,.35);
+        }
+
+        .limbo-icon {
+            font-size: 72px;
+            margin-bottom: 12px;
+        }
+
+        .multiplier {
+            font-size: 58px;
+            font-weight: 900;
+            direction: ltr;
+        }
+
+        .status {
+            margin-top: 8px;
+            color: #9ca3af;
+            font-size: 14px;
+        }
+
+        .panel {
+            background: #11151f;
+            border: 1px solid #252c3a;
+            border-radius: 20px;
+            padding: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #aeb6c5;
+            font-size: 13px;
+        }
+
+        input {
+            width: 100%;
+            height: 52px;
+            border: 1px solid #30394a;
+            border-radius: 13px;
+            background: #090d15;
+            color: white;
+            padding: 0 15px;
+            font-size: 17px;
+            outline: none;
+            direction: ltr;
+        }
+
+        input:focus {
+            border-color: #667085;
+        }
+
+        .field {
+            margin-bottom: 15px;
+        }
+
+        .quick {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 7px;
+            margin-top: 8px;
+        }
+
+        .quick button {
+            height: 38px;
+            border: 0;
+            border-radius: 10px;
+            background: #1b2230;
+            color: white;
+            font-size: 13px;
+        }
+
+        .play {
+            width: 100%;
+            height: 56px;
+            border: 0;
+            border-radius: 15px;
+            background: #ffffff;
+            color: #080b12;
+            font-size: 18px;
+            font-weight: 900;
+            margin-top: 5px;
+        }
+
+        .play:active {
+            transform: scale(.98);
+        }
+
+        .info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .info-box {
+            background: #0b0f17;
+            border-radius: 13px;
+            padding: 13px;
+            text-align: center;
+        }
+
+        .info-title {
+            color: #8d96a7;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .info-value {
+            font-weight: bold;
+            direction: ltr;
+        }
+
+        .message {
+            text-align: center;
+            min-height: 20px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #aeb6c5;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <div class="top">
+        <div class="logo">🐶 LIMBO</div>
+
+        <div class="balance">
+            موجودی:
+            <span id="balance">0 DOGS</span>
+        </div>
+    </div>
+
+    <div class="game">
+
+        <div class="limbo-icon">🎯</div>
+
+        <div class="multiplier" id="multiplier">
+            1.00x
+        </div>
+
+        <div class="status" id="status">
+            ضریب هدف خود را انتخاب کنید
+        </div>
+
+    </div>
+
+    <div class="panel">
+
+        <div class="field">
+
+            <label>
+                تعداد DOGS
+            </label>
+
+            <input
+                id="bet"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="مثلاً 500"
+            >
+
+            <div class="quick">
+
+                <button onclick="setBet(100)">
+                    100
+                </button>
+
+                <button onclick="setBet(500)">
+                    500
+                </button>
+
+                <button onclick="setBet(1000)">
+                    1K
+                </button>
+
+                <button onclick="setBet(5000)">
+                    5K
+                </button>
+
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <label>
+                ضریب هدف
+            </label>
+
+            <input
+                id="target"
+                type="number"
+                min="1.01"
+                step="0.01"
+                value="2.00"
+            >
+
+            <div class="quick">
+
+                <button onclick="setTarget(1.50)">
+                    1.50x
+                </button>
+
+                <button onclick="setTarget(2)">
+                    2.00x
+                </button>
+
+                <button onclick="setTarget(3)">
+                    3.00x
+                </button>
+
+                <button onclick="setTarget(5)">
+                    5.00x
+                </button>
+
+            </div>
+
+        </div>
+
+        <button
+            class="play"
+            id="playButton"
+            onclick="play()"
+        >
+            🎮 شروع LIMBO
+        </button>
+
+        <div class="info">
+
+            <div class="info-box">
+                <div class="info-title">
+                    ضریب هدف
+                </div>
+
+                <div
+                    class="info-value"
+                    id="targetView"
+                >
+                    2.00x
+                </div>
+            </div>
+
+            <div class="info-box">
+                <div class="info-title">
+                    برد احتمالی
+                </div>
+
+                <div
+                    class="info-value"
+                    id="winView"
+                >
+                    0 DOGS
+                </div>
+            </div>
+
+        </div>
+
+        <div
+            class="message"
+            id="message"
+        ></div>
+
+    </div>
+
+</div>
+
+<script>
+
+    const tg = window.Telegram.WebApp;
+
+    tg.ready();
+    tg.expand();
+
+    let balance = 0;
+    let playing = false;
+
+    function setBet(value) {
+        document.getElementById("bet").value = value;
+        updateWin();
+    }
+
+    function setTarget(value) {
+        document.getElementById("target").value = value;
+        updateWin();
+    }
+
+    function updateWin() {
+
+        const bet =
+            Number(document.getElementById("bet").value) || 0;
+
+        const target =
+            Number(document.getElementById("target").value) || 0;
+
+        const win = bet * target;
+
+        document.getElementById("targetView").innerText =
+            target.toFixed(2) + "x";
+
+        document.getElementById("winView").innerText =
+            win.toLocaleString() + " DOGS";
+    }
+
+    document
+        .getElementById("target")
+        .addEventListener("input", updateWin);
+
+    document
+        .getElementById("bet")
+        .addEventListener("input", updateWin);
+
+    function setMessage(text) {
+        document.getElementById("message").innerText = text;
+    }
+
+    function play() {
+
+        if (playing) return;
+
+        const bet =
+            Number(document.getElementById("bet").value);
+
+        const target =
+            Number(document.getElementById("target").value);
+
+        if (!bet || bet <= 0) {
+            setMessage("❌ مقدار DOGS را وارد کنید.");
+            return;
+        }
+
+        if (!target || target < 1.01) {
+            setMessage("❌ ضریب باید حداقل 1.01 باشد.");
+            return;
+        }
+
+        if (balance > 0 && bet > balance) {
+            setMessage("❌ موجودی کافی نیست.");
+            return;
+        }
+
+        playing = true;
+
+        const button =
+            document.getElementById("playButton");
+
+        button.disabled = true;
+        button.innerText = "⏳ در حال اجرا...";
+
+        setMessage("بازی شروع شد...");
+
+        let current = 1.00;
+
+        const timer = setInterval(() => {
+
+            current += Math.random() * 0.15 + 0.03;
+
+            document.getElementById("multiplier")
+                .innerText =
+                current.toFixed(2) + "x";
+
+            if (current >= target) {
+
+                clearInterval(timer);
+
+                document.getElementById("multiplier")
+                    .innerText =
+                    target.toFixed(2) + "x";
+
+                setMessage(
+                    "🏆 ضریب هدف رد شد — برنده شدید!"
+                );
+
+                finish();
+
+            } else if (Math.random() < 0.025) {
+
+                clearInterval(timer);
+
+                setMessage(
+                    "💥 ضریب سقوط کرد — باختید."
+                );
+
+                finish();
+            }
+
+        }, 100);
+
+    }
+
+    function finish() {
+
+        playing = false;
+
+        const button =
+            document.getElementById("playButton");
+
+        button.disabled = false;
+        button.innerText = "🎮 شروع LIMBO";
+
+    }
+
+    updateWin();
+
+</script>
+
+</body>
+  </html>
