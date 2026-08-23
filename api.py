@@ -1,391 +1,916 @@
-import os
-import sqlite3
-import secrets
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0,
+               maximum-scale=1.0,user-scalable=no">
 
-app = Flask(__name__)
-CORS(app)
+<title>LIMBO DOGS</title>
 
-DB_FILE = "limbo.db"
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-# فقط برای اعتبار مجازی
-MIN_BET = 1
-MAX_BET = 1_000_000
-MIN_TARGET = 1.01
-MAX_TARGET = 100.0
+<style>
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: #070a10;
+    color: #fff;
+    font-family: Arial, sans-serif;
+}
+
+.app {
+    max-width: 520px;
+    margin: auto;
+    padding: 16px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+}
+
+.logo {
+    font-size: 24px;
+    font-weight: 900;
+}
+
+.balance {
+    background: #151b27;
+    border: 1px solid #293244;
+    border-radius: 13px;
+    padding: 9px 12px;
+    font-size: 13px;
+}
+
+.balance b {
+    direction: ltr;
+    display: inline-block;
+}
+
+.game {
+    height: 310px;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at center,
+        #202a3b 0,
+        #101621 38%,
+        #080b12 75%);
+    border: 1px solid #293244;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+.icon {
+    font-size: 65px;
+    margin-bottom: 8px;
+}
+
+.multiplier {
+    direction: ltr;
+    font-size: 58px;
+    font-weight: 900;
+}
+
+.status {
+    margin-top: 8px;
+    color: #9aa4b5;
+    font-size: 13px;
+}
+
+.panel {
+    background: #111620;
+    border: 1px solid #293244;
+    border-radius: 20px;
+    padding: 15px;
+}
+
+.field {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    color: #9ca7b8;
+    font-size: 13px;
+    margin-bottom: 7px;
+}
+
+input {
+    width: 100%;
+    height: 52px;
+    background: #080c13;
+    border: 1px solid #303a4d;
+    border-radius: 13px;
+    color: #fff;
+    padding: 0 14px;
+    font-size: 17px;
+    direction: ltr;
+    outline: none;
+}
+
+input:focus {
+    border-color: #68758a;
+}
+
+.quick {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    gap: 7px;
+    margin-top: 7px;
+}
+
+.quick button {
+    height: 38px;
+    border: 0;
+    border-radius: 10px;
+    background: #1b2331;
+    color: #fff;
+}
+
+.play {
+    width: 100%;
+    height: 56px;
+    border: 0;
+    border-radius: 15px;
+    background: #fff;
+    color: #070a10;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.play:disabled {
+    opacity: .5;
+}
+
+.info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.infoBox {
+    background: #090d14;
+    border-radius: 13px;
+    padding: 12px;
+    text-align: center;
+}
+
+.infoTitle {
+    color: #8993a5;
+    font-size: 11px;
+    margin-bottom: 6px;
+}
+
+.infoValue {
+    direction: ltr;
+    font-weight: bold;
+}
+
+.message {
+    min-height: 22px;
+    text-align: center;
+    margin-top: 12px;
+    color: #aeb7c6;
+    font-size: 13px;
+}
+
+.history {
+    margin-top: 15px;
+}
+
+.historyTitle {
+    font-weight: bold;
+    margin-bottom: 9px;
+}
+
+.historyItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #111620;
+    border: 1px solid #242d3d;
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 7px;
+    font-size: 12px;
+}
+
+.win {
+    color: #62e6a2;
+}
+
+.lose {
+    color: #ff6d78;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <div class="header">
+
+        <div class="logo">
+            🐶 LIMBO
+        </div>
+
+        <div class="balance">
+            موجودی:
+            <b id="balance">0 DOGS</b>
+        </div>
+
+    </div>
 
 
-# =========================================================
-# DATABASE
-# =========================================================
+    <div class="game">
 
-def get_db():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+        <div class="icon">
+            🎯
+        </div>
+
+        <div
+            class="multiplier"
+            id="multiplier"
+        >
+            1.00x
+        </div>
+
+        <div
+            class="status"
+            id="status"
+        >
+            ضریب هدف را انتخاب کنید
+        </div>
+
+    </div>
 
 
-def init_db():
-    conn = get_db()
+    <div class="panel">
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT DEFAULT '',
-            first_name TEXT DEFAULT '',
-            balance REAL DEFAULT 0
+        <div class="field">
+
+            <label>
+                تعداد DOGS
+            </label>
+
+            <input
+                id="bet"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="مثلاً 500"
+            >
+
+            <div class="quick">
+
+                <button onclick="setBet(100)">
+                    100
+                </button>
+
+                <button onclick="setBet(500)">
+                    500
+                </button>
+
+                <button onclick="setBet(1000)">
+                    1K
+                </button>
+
+                <button onclick="setBet(5000)">
+                    5K
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="field">
+
+            <label>
+                ضریب هدف
+            </label>
+
+            <input
+                id="target"
+                type="number"
+                min="1.01"
+                step="0.01"
+                value="2.00"
+            >
+
+            <div class="quick">
+
+                <button onclick="setTarget(1.50)">
+                    1.50x
+                </button>
+
+                <button onclick="setTarget(2)">
+                    2.00x
+                </button>
+
+                <button onclick="setTarget(3)">
+                    3.00x
+                </button>
+
+                <button onclick="setTarget(5)">
+                    5.00x
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <button
+            class="play"
+            id="playButton"
+            onclick="play()"
+        >
+            🎮 شروع LIMBO
+        </button>
+
+
+        <div class="info">
+
+            <div class="infoBox">
+
+                <div class="infoTitle">
+                    ضریب هدف
+                </div>
+
+                <div
+                    class="infoValue"
+                    id="targetView"
+                >
+                    2.00x
+                </div>
+
+            </div>
+
+
+            <div class="infoBox">
+
+                <div class="infoTitle">
+                    برد احتمالی
+                </div>
+
+                <div
+                    class="infoValue"
+                    id="winView"
+                >
+                    0 DOGS
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div
+            class="message"
+            id="message"
+        ></div>
+
+    </div>
+
+
+    <div class="history">
+
+        <div class="historyTitle">
+            📜 تاریخچه
+        </div>
+
+        <div id="history"></div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const tg = window.Telegram.WebApp;
+
+tg.ready();
+tg.expand();
+
+
+/* =====================================================
+   VIRTUAL BALANCE
+   ===================================================== */
+
+const BALANCE_KEY = "limbo_virtual_balance";
+const HISTORY_KEY = "limbo_virtual_history";
+
+
+let balance =
+    Number(localStorage.getItem(BALANCE_KEY));
+
+if (!Number.isFinite(balance)) {
+    balance = 10000;
+}
+
+
+function saveBalance() {
+
+    localStorage.setItem(
+        BALANCE_KEY,
+        String(balance)
+    );
+
+}
+
+
+function showBalance() {
+
+    document.getElementById(
+        "balance"
+    ).innerText =
+        balance.toLocaleString() + " DOGS";
+
+}
+
+
+showBalance();
+
+
+/* =====================================================
+   INPUTS
+   ===================================================== */
+
+function setBet(value) {
+
+    document.getElementById(
+        "bet"
+    ).value = value;
+
+    updateWin();
+
+}
+
+
+function setTarget(value) {
+
+    document.getElementById(
+        "target"
+    ).value = value;
+
+    updateWin();
+
+}
+
+
+function updateWin() {
+
+    const bet =
+        Number(
+            document.getElementById("bet").value
+        ) || 0;
+
+    const target =
+        Number(
+            document.getElementById("target").value
+        ) || 0;
+
+    const win =
+        bet * target;
+
+    document.getElementById(
+        "targetView"
+    ).innerText =
+        target.toFixed(2) + "x";
+
+    document.getElementById(
+        "winView"
+    ).innerText =
+        win.toLocaleString() + " DOGS";
+
+}
+
+
+document
+    .getElementById("bet")
+    .addEventListener(
+        "input",
+        updateWin
+    );
+
+
+document
+    .getElementById("target")
+    .addEventListener(
+        "input",
+        updateWin
+    );
+
+
+/* =====================================================
+   MESSAGE
+   ===================================================== */
+
+function message(text) {
+
+    document.getElementById(
+        "message"
+    ).innerText = text;
+
+}
+
+
+/* =====================================================
+   LIMBO
+   ===================================================== */
+
+let playing = false;
+
+
+function play() {
+
+    if (playing)
+        return;
+
+
+    const bet =
+        Number(
+            document.getElementById("bet").value
+        );
+
+    const target =
+        Number(
+            document.getElementById("target").value
+        );
+
+
+    if (!Number.isFinite(bet) || bet <= 0) {
+
+        message(
+            "❌ مقدار DOGS را وارد کنید."
+        );
+
+        return;
+    }
+
+
+    if (!Number.isFinite(target) ||
+        target < 1.01) {
+
+        message(
+            "❌ ضریب باید حداقل 1.01 باشد."
+        );
+
+        return;
+    }
+
+
+    if (bet > balance) {
+
+        message(
+            "❌ موجودی کافی نیست."
+        );
+
+        return;
+    }
+
+
+    playing = true;
+
+
+    const button =
+        document.getElementById(
+            "playButton"
+        );
+
+    button.disabled = true;
+
+    button.innerText =
+        "⏳ در حال اجرا...";
+
+
+    message(
+        "بازی شروع شد..."
+    );
+
+
+    balance -= bet;
+
+    saveBalance();
+
+    showBalance();
+
+
+    let current = 1.00;
+
+
+    /*
+       نتیجه مجازی بازی
+    */
+
+    const crash =
+        generateCrash();
+
+
+    const timer =
+        setInterval(() => {
+
+            current +=
+                Math.random() * 0.12 + 0.03;
+
+
+            if (current >= crash) {
+
+                current = crash;
+
+                clearInterval(timer);
+
+                finishGame(
+                    bet,
+                    target,
+                    crash
+                );
+
+                return;
+            }
+
+
+            document
+                .getElementById(
+                    "multiplier"
+                )
+                .innerText =
+                current.toFixed(2) + "x";
+
+
+        }, 80);
+
+}
+
+
+/* =====================================================
+   CRASH GENERATOR
+   ===================================================== */
+
+function generateCrash() {
+
+    const r =
+        Math.random();
+
+    /*
+       ضریب تصادفی مجازی
+       بین 1.00 و حدود 20
+    */
+
+    let crash =
+        1 / Math.max(
+            0.05,
+            r
+        );
+
+    crash =
+        Math.min(
+            crash,
+            20
+        );
+
+
+    return Math.max(
+        1.00,
+        Number(
+            crash.toFixed(2)
         )
-    """)
+    );
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS games (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            bet REAL NOT NULL,
-            target REAL NOT NULL,
-            crash REAL NOT NULL,
-            win INTEGER NOT NULL,
-            payout REAL NOT NULL,
-            game_token TEXT UNIQUE NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    conn.commit()
-    conn.close()
+}
 
 
-def get_user(user_id):
-    conn = get_db()
+/* =====================================================
+   FINISH
+   ===================================================== */
 
-    row = conn.execute(
-        "SELECT * FROM users WHERE user_id=?",
-        (user_id,)
-    ).fetchone()
+function finishGame(
+    bet,
+    target,
+    crash
+) {
 
-    conn.close()
-    return row
-
-
-def get_balance(user_id):
-    row = get_user(user_id)
-
-    if not row:
-        return None
-
-    return float(row["balance"])
+    const multiplier =
+        document.getElementById(
+            "multiplier"
+        );
 
 
-# =========================================================
-# TELEGRAM USER
-# =========================================================
-
-def get_user_id():
-    """
-    فعلاً برای تست، user_id از Header گرفته می‌شود.
-
-    در نسخه نهایی Mini App باید Telegram initData
-    سمت سرور اعتبارسنجی شود و user_id از داده معتبر
-    تلگرام استخراج شود.
-    """
-
-    value = request.headers.get("X-Telegram-User-ID")
-
-    if not value:
-        return None
-
-    try:
-        return int(value)
-    except ValueError:
-        return None
+    const button =
+        document.getElementById(
+            "playButton"
+        );
 
 
-# =========================================================
-# HEALTH CHECK
-# =========================================================
+    let win =
+        false;
 
-@app.get("/")
-def home():
-    return jsonify({
-        "ok": True,
-        "service": "LIMBO DOGS API",
-        "mode": "virtual"
-    })
+    let payout =
+        0;
 
 
-# =========================================================
-# BALANCE
-# =========================================================
-
-@app.get("/api/balance")
-def balance():
-
-    user_id = get_user_id()
-
-    if not user_id:
-        return jsonify({
-            "ok": False,
-            "error": "USER_ID_REQUIRED"
-        }), 401
-
-    amount = get_balance(user_id)
-
-    if amount is None:
-        return jsonify({
-            "ok": False,
-            "error": "USER_NOT_FOUND"
-        }), 404
-
-    return jsonify({
-        "ok": True,
-        "balance": amount,
-        "currency": "DOGS"
-    })
+    multiplier.innerText =
+        crash.toFixed(2) + "x";
 
 
-# =========================================================
-# LIMBO
-# =========================================================
+    /*
+       اگر ضریب سقوط به هدف برسد
+       کاربر برنده است.
+    */
 
-@app.post("/api/limbo/play")
-def limbo_play():
+    if (crash >= target) {
 
-    user_id = get_user_id()
+        win = true;
 
-    if not user_id:
-        return jsonify({
-            "ok": False,
-            "error": "USER_ID_REQUIRED"
-        }), 401
+        payout =
+            bet * target;
 
-    data = request.get_json(silent=True) or {}
+        balance += payout;
 
-    try:
-        bet = float(data.get("bet"))
-        target = float(data.get("target"))
-    except (TypeError, ValueError):
-        return jsonify({
-            "ok": False,
-            "error": "INVALID_NUMBER"
-        }), 400
+        message(
+            "🏆 برنده شدی! +" +
+            payout.toLocaleString() +
+            " DOGS"
+        );
 
-    # -------------------------
-    # VALIDATION
-    # -------------------------
+    } else {
 
-    if bet < MIN_BET:
-        return jsonify({
-            "ok": False,
-            "error": "BET_TOO_SMALL"
-        }), 400
+        message(
+            "💥 ضریب روی " +
+            crash.toFixed(2) +
+            "x سقوط کرد."
+        );
 
-    if bet > MAX_BET:
-        return jsonify({
-            "ok": False,
-            "error": "BET_TOO_LARGE"
-        }), 400
+    }
 
-    if target < MIN_TARGET:
-        return jsonify({
-            "ok": False,
-            "error": "TARGET_TOO_SMALL"
-        }), 400
 
-    if target > MAX_TARGET:
-        return jsonify({
-            "ok": False,
-            "error": "TARGET_TOO_LARGE"
-        }), 400
+    saveBalance();
 
-    # -------------------------
-    # DATABASE TRANSACTION
-    # -------------------------
+    showBalance();
 
-    conn = get_db()
 
-    try:
+    saveHistory({
+        bet: bet,
+        target: target,
+        crash: crash,
+        win: win,
+        payout: payout,
+        time: new Date().toLocaleTimeString()
+    });
 
-        conn.execute("BEGIN IMMEDIATE")
 
-        user = conn.execute(
-            "SELECT balance FROM users WHERE user_id=?",
-            (user_id,)
-        ).fetchone()
+    playing = false;
 
-        if not user:
-            conn.rollback()
+    button.disabled = false;
 
-            return jsonify({
-                "ok": False,
-                "error": "USER_NOT_FOUND"
-            }), 404
+    button.innerText =
+        "🎮 شروع LIMBO";
 
-        balance = float(user["balance"])
 
-        if bet > balance:
-            conn.rollback()
+    document.getElementById(
+        "status"
+    ).innerText =
+        win
+            ? "🏆 برد"
+            : "💥 باخت";
 
-            return jsonify({
-                "ok": False,
-                "error": "INSUFFICIENT_BALANCE",
-                "balance": balance
-            }), 400
 
-        # -------------------------
-        # LIMBO RESULT
-        # -------------------------
+    renderHistory();
 
-        # ضریب تصادفی مجازی
-        #
-        # این نتیجه فقط برای اعتبار مجازی است.
-        #
-        # مقدار crash همیشه حداقل 1.00 است.
-        random_value = secrets.randbelow(10_000_000) / 100_000
+}
 
-        crash = max(1.00, random_value)
 
-        # -------------------------
-        # RESULT
-        # -------------------------
+/* =====================================================
+   HISTORY
+   ===================================================== */
 
-        if crash >= target:
+function getHistory() {
 
-            win = 1
-            payout = bet * target
-            new_balance = balance - bet + payout
+    try {
 
-        else:
-
-            win = 0
-            payout = 0
-            new_balance = balance - bet
-
-        # -------------------------
-        # UPDATE BALANCE
-        # -------------------------
-
-        conn.execute(
-            "UPDATE users SET balance=? WHERE user_id=?",
-            (new_balance, user_id)
-        )
-
-        game_token = secrets.token_urlsafe(24)
-
-        conn.execute("""
-            INSERT INTO games
-            (
-                user_id,
-                bet,
-                target,
-                crash,
-                win,
-                payout,
-                game_token
+        return JSON.parse(
+            localStorage.getItem(
+                HISTORY_KEY
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            user_id,
-            bet,
-            target,
-            crash,
-            win,
-            payout,
-            game_token
-        ))
+        ) || [];
 
-        conn.commit()
+    } catch {
 
-    except Exception as e:
+        return [];
 
-        conn.rollback()
+    }
 
-        return jsonify({
-            "ok": False,
-            "error": "DATABASE_ERROR"
-        }), 500
-
-    finally:
-        conn.close()
-
-    return jsonify({
-        "ok": True,
-        "game": {
-            "bet": bet,
-            "target": target,
-            "crash": round(crash, 2),
-            "win": bool(win),
-            "payout": round(payout, 2),
-            "balance": round(new_balance, 2),
-            "game_token": game_token
-        }
-    })
+}
 
 
-# =========================================================
-# GAME HISTORY
-# =========================================================
+function saveHistory(game) {
 
-@app.get("/api/limbo/history")
-def history():
+    const history =
+        getHistory();
 
-    user_id = get_user_id()
+    history.unshift(game);
 
-    if not user_id:
-        return jsonify({
-            "ok": False,
-            "error": "USER_ID_REQUIRED"
-        }), 401
+    history.splice(
+        20
+    );
 
-    conn = get_db()
+    localStorage.setItem(
+        HISTORY_KEY,
+        JSON.stringify(history)
+    );
 
-    rows = conn.execute("""
-        SELECT
-            id,
-            bet,
-            target,
-            crash,
-            win,
-            payout,
-            created_at
-        FROM games
-        WHERE user_id=?
-        ORDER BY id DESC
-        LIMIT 20
-    """, (user_id,)).fetchall()
-
-    conn.close()
-
-    games = []
-
-    for row in rows:
-        games.append({
-            "id": row["id"],
-            "bet": row["bet"],
-            "target": row["target"],
-            "crash": row["crash"],
-            "win": bool(row["win"]),
-            "payout": row["payout"],
-            "created_at": row["created_at"]
-        })
-
-    return jsonify({
-        "ok": True,
-        "games": games
-    })
+}
 
 
-# =========================================================
-# RUN
-# =========================================================
+function renderHistory() {
 
-if __name__ == "__main__":
+    const container =
+        document.getElementById(
+            "history"
+        );
 
-    init_db()
 
-    port = int(os.getenv("PORT", "8080"))
+    const history =
+        getHistory();
 
-    app.run(
-        host="0.0.0.0",
-        port=port
-  )
+
+    if (!history.length) {
+
+        container.innerHTML =
+            '<div style="color:#8993a5;font-size:12px">هنوز بازی‌ای انجام نشده.</div>';
+
+        return;
+    }
+
+
+    container.innerHTML =
+        history
+            .map(game => {
+
+                const cls =
+                    game.win
+                        ? "win"
+                        : "lose";
+
+
+                const result =
+                    game.win
+                        ? "+" +
+                          Number(
+                              game.payout
+                          ).toLocaleString()
+                        : "-" +
+                          Number(
+                              game.bet
+                          ).toLocaleString();
+
+
+                return `
+                    <div class="historyItem">
+
+                        <div>
+                            ${game.time}
+                            <br>
+                            🎯 ${Number(game.target).toFixed(2)}x
+                        </div>
+
+                        <div>
+                            ${Number(game.crash).toFixed(2)}x
+                        </div>
+
+                        <div class="${cls}">
+                            ${result} DOGS
+                        </div>
+
+                    </div>
+                `;
+
+            })
+            .join("");
+
+}
+
+
+renderHistory();
+
+updateWin();
+
+</script>
+
+</body>
+</html>
