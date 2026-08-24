@@ -97,18 +97,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ],
         [
-            InlineKeyboardButton(
-                "👑 Admin",
-                callback_data="admin"
-            )
-        ]
-    ]
 
-    await update.message.reply_text(
-    f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
-    reply_markup=InlineKeyboardMarkup(kb)
+
+
+    
+                await update.message.reply_text(
+        f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
+        reply_markup=InlineKeyboardMarkup(kb)
     )
-        async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
     await q.answer()
