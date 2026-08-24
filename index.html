@@ -2,12 +2,14 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>DOGS Rocket LIMBO</title>
 
 <style>
+
 body{
-background:#071321;
+background:#050b16;
 color:white;
 font-family:tahoma;
 text-align:center;
@@ -16,40 +18,44 @@ margin:0;
 
 .box{
 max-width:430px;
-margin:15px auto;
+margin:20px auto;
 background:#102238;
 padding:20px;
 border-radius:20px;
 }
 
-h1{color:#00eaff}
+h1{
+color:#00eaff;
+}
 
 input{
 width:90%;
 padding:12px;
-margin:6px;
+margin:7px;
 border-radius:10px;
 border:0;
+font-size:18px;
 }
 
 button{
-padding:12px 20px;
+width:90%;
+padding:13px;
+margin:7px;
 border:0;
 border-radius:12px;
 background:#00bfff;
-font-size:17px;
-cursor:pointer;
-margin:5px;
+font-size:18px;
 }
 
 .balance{
-font-size:22px;
+font-size:24px;
 color:#00ff99;
+margin:15px;
 }
 
-.space{
+.game{
 height:250px;
-background:#020711;
+background:#02050b;
 border-radius:15px;
 position:relative;
 overflow:hidden;
@@ -57,23 +63,29 @@ overflow:hidden;
 
 #rocket{
 position:absolute;
-bottom:20px;
 right:20px;
-font-size:45px;
-transition:.5s;
+bottom:20px;
+font-size:50px;
+transition:.3s;
 }
 
 .multi{
-font-size:38px;
+font-size:45px;
 color:#ffd700;
 margin:15px;
 }
 
 .card{
-background:#091726;
+background:#091625;
 padding:15px;
 border-radius:15px;
 margin-top:15px;
+}
+
+.wallet{
+font-size:12px;
+color:#00d9ff;
+word-break:break-all;
 }
 
 .history{
@@ -82,13 +94,7 @@ overflow:auto;
 text-align:right;
 }
 
-.wallet{
-font-size:12px;
-word-break:break-all;
-color:#00d9ff;
-}
 </style>
-
 </head>
 
 <body>
@@ -99,7 +105,8 @@ color:#00d9ff;
 
 <div class="balance">
 موجودی:
-<span id="balance"></span> DOGS
+<span id="balance">10000</span>
+DOGS
 </div>
 
 
@@ -107,21 +114,35 @@ color:#00d9ff;
 
 <h3>🎯 بازی</h3>
 
-<input id="bet" type="number" placeholder="مقدار شرط DOGS" value="100">
+ضریب انتخابی:
 
-<input id="target" type="number" step="0.01"
-placeholder="ضریب هدف مثلا 2.5"
-value="2.5">
+<input id="target"
+type="number"
+value="2.5"
+step="0.01">
 
-<br>
 
-<button onclick="start()">شروع 🚀</button>
+تعداد DOGS شرط:
+
+<input id="bet"
+type="number"
+value="100">
+
+
+<button id="startBtn">
+شروع 🚀
+</button>
+
 
 </div>
 
 
-<div class="space">
-<div id="rocket">🚀</div>
+<div class="game">
+
+<div id="rocket">
+🚀
+</div>
+
 </div>
 
 
@@ -138,14 +159,20 @@ x<span id="multi">1.00</span>
 UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
 </div>
 
-<button onclick="copyWallet()">کپی ولت</button>
+<button id="copy">
+کپی ولت
+</button>
 
 
 <input id="charge"
 type="number"
 placeholder="مقدار شارژ">
 
-<button onclick="charge()">ثبت شارژ</button>
+
+<button id="chargeBtn">
+شارژ تستی
+</button>
+
 
 </div>
 
@@ -158,31 +185,25 @@ placeholder="مقدار شارژ">
 
 </div>
 
+
 </div>
-
-
-
 <script>
 
-let balance =
-Number(localStorage.getItem("dogs")) || 10000;
+let balance = Number(localStorage.getItem("dogs")) || 10000;
+
+let history = JSON.parse(localStorage.getItem("history")) || [];
+
+let playing = false;
+let timer = null;
+let multiplier = 1;
 
 
-let history =
-JSON.parse(localStorage.getItem("history")) || [];
+function saveData(){
 
-
-let running=false;
-let timer;
-let multi=1;
-let target=2.5;
-let bet=0;
-
-
-
-function save(){
-
-localStorage.setItem("dogs",balance);
+localStorage.setItem(
+"dogs",
+balance
+);
 
 localStorage.setItem(
 "history",
@@ -193,67 +214,96 @@ JSON.stringify(history)
 
 
 
-function update(){
+function updateScreen(){
 
-document.getElementById("balance")
-.innerHTML=balance.toFixed(0);
+document.getElementById("balance").innerHTML =
+balance.toFixed(0);
 
 
-document.getElementById("history")
-.innerHTML=
-history.reverse().map(x=>
-"<div>"+x+"</div>"
-).join("");
-
-history.reverse();
+document.getElementById("history").innerHTML =
+history.slice().reverse()
+.map(item => "<p>"+item+"</p>")
+.join("");
 
 }
 
 
-update();
+updateScreen();
 
 
 
-function start(){
-
-if(running)return;
-
-
-bet=Number(
-document.getElementById("bet").value
-);
+document.getElementById("startBtn")
+.onclick = function(){
 
 
-target=Number(
-document.getElementById("target").value
-);
-
-
-
-if(bet<=0 || bet>balance){
-
-alert("مقدار شرط اشتباه است");
+if(playing){
 return;
-
 }
 
 
-if(target<1.1){
 
-alert("ضریب باید بیشتر از 1.1 باشد");
+let bet =
+Number(document.getElementById("bet").value);
+
+
+
+let target =
+Number(document.getElementById("target").value);
+
+
+
+if(!Number.isFinite(bet) ||
+!Number.isFinite(target)){
+
+alert("عدد وارد کن");
 return;
 
 }
 
 
 
-balance-=bet;
-save();
-update();
+if(bet <= 0){
+
+alert("شرط باید بیشتر از صفر باشد");
+return;
+
+}
 
 
-running=true;
-multi=1;
+
+if(bet > balance){
+
+alert("موجودی کافی نیست");
+return;
+
+}
+
+
+
+if(target < 1.10){
+
+alert("ضریب کم است");
+return;
+
+}
+
+
+
+balance -= bet;
+
+saveData();
+
+updateScreen();
+
+
+
+playing = true;
+
+document.getElementById("startBtn").disabled=true;
+
+
+multiplier = 1;
+
 
 
 document.getElementById("rocket")
@@ -261,89 +311,87 @@ document.getElementById("rocket")
 
 
 
-timer=setInterval(()=>{
+timer=setInterval(function(){
 
 
-multi+=0.05;
+multiplier += 0.05;
+
 
 
 document.getElementById("multi")
-.innerHTML=multi.toFixed(2);
+.innerHTML =
+multiplier.toFixed(2);
 
 
 
 document.getElementById("rocket")
-.style.right=
-(20+multi*25)+"px";
+.style.right =
+(20 + multiplier*25)+"px";
+
+
 
 
 
 // رسیدن به ضریب انتخابی
 
-if(multi>=target){
+if(multiplier >= target){
 
 
 clearInterval(timer);
-running=false;
 
 
-let win=
-bet*target;
+let win =
+bet * target;
 
 
-balance+=win;
+
+balance += win;
+
 
 
 history.push(
-"✅ برد x"+
+"🚀 برد | x"+
 target.toFixed(2)+
-" +"+
+" | +"+
 win.toFixed(0)+
 " DOGS"
 );
 
 
-save();
-update();
 
-
-alert(
-"بردی 🚀 "+
-win.toFixed(0)+" DOGS"
+finish(
+"بردی "+win.toFixed(0)+" DOGS"
 );
-
-
-reset();
 
 
 }
 
 
-// احتمال انفجار
 
-if(Math.random()<0.025){
+
+
+// انفجار
+
+else if(Math.random() < 0.02){
+
 
 
 clearInterval(timer);
-running=false;
+
 
 
 history.push(
-"💥 باخت در x"+
-multi.toFixed(2)
+"💥 باخت | انفجار x"+
+multiplier.toFixed(2)
 );
 
 
-save();
-update();
 
-
-alert(
+finish(
 "موشک منفجر شد 💥"
 );
 
 
-reset();
 
 }
 
@@ -351,38 +399,69 @@ reset();
 
 },400);
 
-}
+
+
+};
 
 
 
 
-function reset(){
+function finish(message){
 
-multi=1;
+
+playing=false;
+
+
+document.getElementById("startBtn")
+.disabled=false;
+
+
+saveData();
+
+updateScreen();
+
+
+alert(message);
+
+
+
+multiplier=1;
+
 
 document.getElementById("multi")
 .innerHTML="1.00";
 
+
 document.getElementById("rocket")
 .style.right="20px";
+
 
 }
 
 
 
-function charge(){
+</script>
+
+    <script>
+
+document.getElementById("chargeBtn").onclick=function(){
+
+let amount =
+Number(document.getElementById("charge").value);
 
 
-let amount=
-Number(
-document.getElementById("charge").value
-);
+if(!Number.isFinite(amount) || amount<=0){
+
+alert("مقدار شارژ اشتباه است");
+return;
+
+}
 
 
-if(amount<=0)return;
+
+balance += amount;
 
 
-balance+=amount;
 
 history.push(
 "💳 شارژ +"+
@@ -391,26 +470,40 @@ amount+
 );
 
 
-save();
-update();
+
+saveData();
+
+updateScreen();
 
 
-alert("شارژ انجام شد");
-
-}
-
-
-
-
-function copyWallet(){
-
-navigator.clipboard.writeText(
-"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h"
+alert(
+"شارژ انجام شد"
 );
 
-alert("ولت کپی شد");
 
-}
+
+};
+
+
+
+document.getElementById("copy")
+.onclick=function(){
+
+
+let wallet =
+"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h";
+
+
+navigator.clipboard.writeText(wallet);
+
+
+alert(
+"ولت کپی شد"
+);
+
+
+};
+
 
 
 </script>
