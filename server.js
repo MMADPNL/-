@@ -1,263 +1,136 @@
 const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const sqlite3 = require("sqlite3").verbose();
-const fs = require("fs");
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
+let users = {};
 
-if (!fs.existsSync("receipts")) {
-    fs.mkdirSync("receipts");
+function getUser(id){
+    if(!users[id]){
+        users[id] = {
+            balance: 10000
+        };
+    }
+
+    return users[id];
 }
 
 
-const upload = multer({
-    dest: "receipts/"
-});
-
-
-const db = new sqlite3.Database("dogs.db");
-
-
-// کاربران
-db.run(`
-CREATE TABLE IF NOT EXISTS users(
-id TEXT PRIMARY KEY,
-balance INTEGER DEFAULT 10000
-)
-`);
-
-
-// درخواست‌های واریز
-db.run(`
-CREATE TABLE IF NOT EXISTS deposits(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-user_id TEXT,
-amount INTEGER,
-photo TEXT,
-status TEXT DEFAULT 'pending'
-)
-`);
-
-
-
-// تست سرور
-app.get("/",(req,res)=>{
+app.get("/", (req,res)=>{
     res.send("🚀 DOGS LIMBO SERVER ONLINE");
 });
 
 
-
-// ساخت کاربر و موجودی
+// موجودی
 app.get("/balance/:id",(req,res)=>{
 
-    let id=req.params.id;
+    let user = getUser(req.params.id);
 
-
-    db.get(
-        "SELECT balance FROM users WHERE id=?",
-        [id],
-        (err,row)=>{
-
-            if(!row){
-
-                db.run(
-                    "INSERT INTO users(id,balance) VALUES(?,?)",
-                    [id,10000]
-                );
-
-                return res.json({
-                    balance:10000
-                });
-
-            }
-
-
-            res.json({
-                balance:row.balance
-            });
-
-        }
-    );
+    res.json({
+        balance: user.balance
+    });
 
 });
 
 
+// بازی LIMBO
+app.post("/limbo",(req,res)=>{
+
+    let id = req.body.id;
+    let bet = Number(req.body.bet);
+    let target = Number(req.body.target);
+
+    let user = getUser(id);
 
 
-// ارسال رسید
-app.post(
-"/deposit",
-upload.single("photo"),
-(req,res)=>{
+    if(!bet || !target){
 
-
-    let user_id=req.body.user_id;
-    let amount=req.body.amount;
-
-
-    if(!user_id || !amount || !req.file){
-
-        return res.status(400).json({
-            error:"اطلاعات ناقص است"
+        return res.json({
+            error:"عدد اشتباه"
         });
 
     }
 
 
+    if(bet > user.balance){
 
-    db.run(
-        `
-        INSERT INTO deposits
-        (user_id,amount,photo,status)
+        return res.json({
+            error:"موجودی کافی نیست"
+        });
 
-        VALUES(?,?,?,?)
-        `,
-        [
-            user_id,
-            amount,
-            req.file.path,
-            "pending"
-        ]
+    }
+
+
+    user.balance -= bet;
+
+
+    let crash = Number(
+        (Math.random()*9+1).toFixed(2)
     );
 
 
+    if(target <= crash){
+
+        let win = Math.floor(
+            bet * target
+        );
+
+        user.balance += win;
+
+
+        return res.json({
+
+            win:true,
+
+            prize:win,
+
+            balance:user.balance
+
+        });
+
+    }
+
+
     res.json({
-        success:true,
-        message:"رسید ثبت شد"
+
+        win:false,
+
+        crash:crash,
+
+        balance:user.balance
+
     });
 
 
 });
 
 
+// شارژ تستی
+app.post("/charge",(req,res)=>{
 
+    let user = getUser(req.body.id);
 
-
-// دیدن درخواست‌ها توسط مالک
-app.get("/admin/deposits",(req,res)=>{
-
-
-    db.all(
-        `
-        SELECT * FROM deposits
-        WHERE status='pending'
-        `,
-        [],
-        (err,rows)=>{
-
-            res.json(rows);
-
-        }
-    );
-
-
-});
-
-
-
-
-
-// تایید
-app.post("/admin/approve",(req,res)=>{
-
-
-    let id=req.body.id;
-
-
-    db.get(
-        "SELECT * FROM deposits WHERE id=?",
-        [id],
-        (err,row)=>{
-
-
-            if(!row){
-
-                return res.json({
-                    error:"درخواست پیدا نشد"
-                });
-
-            }
-
-
-
-            db.run(
-                `
-                UPDATE users
-                SET balance=balance+?
-                WHERE id=?
-                `,
-                [
-                    row.amount,
-                    row.user_id
-                ]
-            );
-
-
-
-            db.run(
-                `
-                UPDATE deposits
-                SET status='approved'
-                WHERE id=?
-                `,
-                [id]
-            );
-
-
-            res.json({
-                success:true
-            });
-
-
-        }
-    );
-
-
-});
-
-
-
-
-
-// رد
-app.post("/admin/reject",(req,res)=>{
-
-
-    db.run(
-        `
-        UPDATE deposits
-        SET status='rejected'
-        WHERE id=?
-        `,
-        [
-            req.body.id
-        ]
+    user.balance += Number(
+        req.body.amount
     );
 
 
     res.json({
-        success:true
-    });
 
+        balance:user.balance
+
+    });
 
 });
 
 
 
-
-
-const PORT=process.env.PORT || 3000;
-
-
-app.listen(PORT,()=>{
+app.listen(3000,()=>{
 
     console.log(
-        "SERVER RUNNING : "+PORT
+        "🚀 SERVER RUNNING"
     );
 
 });
