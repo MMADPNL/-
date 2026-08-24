@@ -2,80 +2,90 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LIMBO Rocket</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DOGS Rocket LIMBO</title>
 
 <style>
 body{
-    margin:0;
-    background:#07111f;
-    color:white;
-    font-family:tahoma;
-    text-align:center;
+background:#071321;
+color:white;
+font-family:tahoma;
+text-align:center;
+margin:0;
 }
 
 .box{
-    max-width:420px;
-    margin:20px auto;
-    background:#101d33;
-    padding:20px;
-    border-radius:20px;
+max-width:430px;
+margin:15px auto;
+background:#102238;
+padding:20px;
+border-radius:20px;
 }
 
-h1{
-    color:#00d9ff;
-}
+h1{color:#00eaff}
 
-.balance{
-    font-size:22px;
-    margin:15px;
-}
-
-.space{
-    height:220px;
-    background:#020711;
-    border-radius:15px;
-    overflow:hidden;
-    position:relative;
-}
-
-#rocket{
-    position:absolute;
-    bottom:20px;
-    right:20px;
-    font-size:45px;
-    transition:1s;
-}
-
-.mult{
-    font-size:35px;
-    color:#00ff99;
-    margin:15px;
+input{
+width:90%;
+padding:12px;
+margin:6px;
+border-radius:10px;
+border:0;
 }
 
 button{
-    background:#00bfff;
-    border:0;
-    padding:12px 25px;
-    border-radius:15px;
-    font-size:18px;
-    cursor:pointer;
+padding:12px 20px;
+border:0;
+border-radius:12px;
+background:#00bfff;
+font-size:17px;
+cursor:pointer;
+margin:5px;
 }
 
-input{
-    padding:10px;
-    border-radius:10px;
-    width:120px;
+.balance{
+font-size:22px;
+color:#00ff99;
+}
+
+.space{
+height:250px;
+background:#020711;
+border-radius:15px;
+position:relative;
+overflow:hidden;
+}
+
+#rocket{
+position:absolute;
+bottom:20px;
+right:20px;
+font-size:45px;
+transition:.5s;
+}
+
+.multi{
+font-size:38px;
+color:#ffd700;
+margin:15px;
+}
+
+.card{
+background:#091726;
+padding:15px;
+border-radius:15px;
+margin-top:15px;
 }
 
 .history{
-    text-align:right;
-    background:#091526;
-    padding:10px;
-    border-radius:10px;
-    margin-top:15px;
-    max-height:150px;
-    overflow:auto;
+max-height:150px;
+overflow:auto;
+text-align:right;
+}
+
+.wallet{
+font-size:12px;
+word-break:break-all;
+color:#00d9ff;
 }
 </style>
 
@@ -85,157 +95,326 @@ input{
 
 <div class="box">
 
-<h1>🚀 LIMBO ROCKET</h1>
+<h1>🚀 DOGS LIMBO</h1>
 
 <div class="balance">
-موجودی DOGS:
-<span id="balance"></span>
+موجودی:
+<span id="balance"></span> DOGS
 </div>
 
-<input id="bet" type="number" value="100">
 
-<br><br>
+<div class="card">
+
+<h3>🎯 بازی</h3>
+
+<input id="bet" type="number" placeholder="مقدار شرط DOGS" value="100">
+
+<input id="target" type="number" step="0.01"
+placeholder="ضریب هدف مثلا 2.5"
+value="2.5">
+
+<br>
+
+<button onclick="start()">شروع 🚀</button>
+
+</div>
+
 
 <div class="space">
 <div id="rocket">🚀</div>
 </div>
 
-<div class="mult">
+
+<div class="multi">
 x<span id="multi">1.00</span>
 </div>
 
-<button onclick="startGame()">شروع LIMBO</button>
-<button onclick="cashout()">برداشت</button>
+
+<div class="card">
+
+<h3>💳 واریز DOGS</h3>
+
+<div class="wallet">
+UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
+</div>
+
+<button onclick="copyWallet()">کپی ولت</button>
 
 
-<div class="history">
-<h3>تاریخچه</h3>
-<div id="history"></div>
+<input id="charge"
+type="number"
+placeholder="مقدار شارژ">
+
+<button onclick="charge()">ثبت شارژ</button>
+
+</div>
+
+
+<div class="card">
+
+<h3>📜 تاریخچه</h3>
+
+<div id="history" class="history"></div>
+
 </div>
 
 </div>
+
 
 
 <script>
 
 let balance =
-localStorage.getItem("dogs") || 10000;
+Number(localStorage.getItem("dogs")) || 10000;
+
 
 let history =
 JSON.parse(localStorage.getItem("history")) || [];
 
-let game=false;
-let multiplier=1;
+
+let running=false;
 let timer;
+let multi=1;
+let target=2.5;
+let bet=0;
+
+
+
+function save(){
+
+localStorage.setItem("dogs",balance);
+
+localStorage.setItem(
+"history",
+JSON.stringify(history)
+);
+
+}
+
 
 
 function update(){
 
-document.getElementById("balance").innerHTML=
-Number(balance).toFixed(0);
+document.getElementById("balance")
+.innerHTML=balance.toFixed(0);
 
-document.getElementById("history").innerHTML=
-history.slice().reverse().map(x=>"<div>"+x+"</div>").join("");
+
+document.getElementById("history")
+.innerHTML=
+history.reverse().map(x=>
+"<div>"+x+"</div>"
+).join("");
+
+history.reverse();
 
 }
+
 
 update();
 
 
 
-function startGame(){
+function start(){
 
-if(game)return;
+if(running)return;
 
-let bet=
-Number(document.getElementById("bet").value);
 
-if(bet>balance || bet<=0){
-alert("موجودی کافی نیست");
+bet=Number(
+document.getElementById("bet").value
+);
+
+
+target=Number(
+document.getElementById("target").value
+);
+
+
+
+if(bet<=0 || bet>balance){
+
+alert("مقدار شرط اشتباه است");
 return;
+
 }
 
+
+if(target<1.1){
+
+alert("ضریب باید بیشتر از 1.1 باشد");
+return;
+
+}
+
+
+
 balance-=bet;
-localStorage.setItem("dogs",balance);
+save();
+update();
 
-game=true;
-multiplier=1;
 
-document.getElementById("rocket").style.right="20px";
+running=true;
+multi=1;
+
+
+document.getElementById("rocket")
+.style.right="20px";
+
 
 
 timer=setInterval(()=>{
 
-multiplier+=0.05;
 
-document.getElementById("multi").innerHTML=
-multiplier.toFixed(2);
+multi+=0.05;
 
 
-let move=20+(multiplier*20);
-
-document.getElementById("rocket").style.right=
-move+"px";
+document.getElementById("multi")
+.innerHTML=multi.toFixed(2);
 
 
-if(Math.random()<0.03){
+
+document.getElementById("rocket")
+.style.right=
+(20+multi*25)+"px";
+
+
+
+// رسیدن به ضریب انتخابی
+
+if(multi>=target){
+
 
 clearInterval(timer);
-game=false;
+running=false;
 
-history.push(
-"🚀 انفجار در x"+multiplier.toFixed(2)
-);
-
-localStorage.setItem("history",
-JSON.stringify(history));
-
-update();
-
-alert("موشک منفجر شد 💥");
-
-}
-
-},500);
-
-}
-
-
-
-function cashout(){
-
-if(!game)return;
-
-let bet=
-Number(document.getElementById("bet").value);
-
-clearInterval(timer);
-game=false;
 
 let win=
-bet*multiplier;
+bet*target;
+
 
 balance+=win;
 
+
 history.push(
-"✅ برد x"+multiplier.toFixed(2)+
-" +"+win.toFixed(0)+" DOGS"
+"✅ برد x"+
+target.toFixed(2)+
+" +"+
+win.toFixed(0)+
+" DOGS"
 );
 
-localStorage.setItem("dogs",balance);
-localStorage.setItem("history",
-JSON.stringify(history));
 
-
+save();
 update();
 
-document.getElementById("multi").innerHTML="1.00";
 
-alert("بردی 🚀");
+alert(
+"بردی 🚀 "+
+win.toFixed(0)+" DOGS"
+);
+
+
+reset();
+
 
 }
 
+
+// احتمال انفجار
+
+if(Math.random()<0.025){
+
+
+clearInterval(timer);
+running=false;
+
+
+history.push(
+"💥 باخت در x"+
+multi.toFixed(2)
+);
+
+
+save();
+update();
+
+
+alert(
+"موشک منفجر شد 💥"
+);
+
+
+reset();
+
+}
+
+
+
+},400);
+
+}
+
+
+
+
+function reset(){
+
+multi=1;
+
+document.getElementById("multi")
+.innerHTML="1.00";
+
+document.getElementById("rocket")
+.style.right="20px";
+
+}
+
+
+
+function charge(){
+
+
+let amount=
+Number(
+document.getElementById("charge").value
+);
+
+
+if(amount<=0)return;
+
+
+balance+=amount;
+
+history.push(
+"💳 شارژ +"+
+amount+
+" DOGS"
+);
+
+
+save();
+update();
+
+
+alert("شارژ انجام شد");
+
+}
+
+
+
+
+function copyWallet(){
+
+navigator.clipboard.writeText(
+"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h"
+);
+
+alert("ولت کپی شد");
+
+}
+
+
 </script>
+
 
 </body>
 </html>
