@@ -7,7 +7,7 @@ import sqlite3, random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-TOKEN = "PUT_YOUR_BOT_TOKEN"
+TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
 OWNER_ID = 8552447077
 
 db = sqlite3.connect("dogs.db", check_same_thread=False)
