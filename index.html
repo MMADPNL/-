@@ -1,20 +1,25 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
+
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>DOGS Rocket LIMBO</title>
+<title>DOGS LIMBO</title>
+
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
 
 <style>
 
 body{
-background:#050b16;
+background:#07111f;
 color:white;
 font-family:tahoma;
 text-align:center;
 margin:0;
 }
+
 
 .box{
 max-width:430px;
@@ -24,178 +29,229 @@ padding:20px;
 border-radius:20px;
 }
 
+
 h1{
 color:#00eaff;
 }
 
-input{
-width:90%;
-padding:12px;
-margin:7px;
-border-radius:10px;
-border:0;
-font-size:18px;
-}
 
 button{
+
 width:90%;
-padding:13px;
-margin:7px;
+padding:14px;
+margin:8px;
 border:0;
 border-radius:12px;
 background:#00bfff;
 font-size:18px;
+
 }
 
-.balance{
-font-size:24px;
-color:#00ff99;
-margin:15px;
-}
-
-.game{
-height:250px;
-background:#02050b;
-border-radius:15px;
-position:relative;
-overflow:hidden;
-}
-
-#rocket{
-position:absolute;
-right:20px;
-bottom:20px;
-font-size:50px;
-transition:.3s;
-}
-
-.multi{
-font-size:45px;
-color:#ffd700;
-margin:15px;
-}
 
 .card{
+
 background:#091625;
 padding:15px;
 border-radius:15px;
 margin-top:15px;
+
 }
 
-.wallet{
-font-size:12px;
-color:#00d9ff;
-word-break:break-all;
+
+.balance{
+
+font-size:25px;
+color:#00ff99;
+
 }
 
-.history{
-max-height:150px;
-overflow:auto;
-text-align:right;
-}
 
 </style>
+
 </head>
+
+
 
 <body>
 
+
 <div class="box">
+
 
 <h1>🚀 DOGS LIMBO</h1>
 
+
 <div class="balance">
-موجودی:
-<span id="balance">10000</span>
-DOGS
+
+DOGS:
+<span id="balance">
+0
+</span>
+
 </div>
+
 
 
 <div class="card">
 
-<h3>🎯 بازی</h3>
-
-ضریب انتخابی:
-
-<input id="target"
-type="number"
-value="2.5"
-step="0.01">
-
-
-تعداد DOGS شرط:
-
-<input id="bet"
-type="number"
-value="100">
-
-
-<button id="startBtn">
-شروع 🚀
-</button>
-
-
-</div>
-
-
-<div class="game">
-
-<div id="rocket">
-🚀
-</div>
-
-</div>
-
-
-<div class="multi">
-x<span id="multi">1.00</span>
-</div>
-
-
-<div class="card">
 
 <h3>💳 واریز DOGS</h3>
 
-<div class="wallet">
-UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
-</div>
 
-<button id="copy">
-کپی ولت
+<div id="ton-connect"></div>
+
+
+
+<button onclick="deposit()">
+
+واریز DOGS
+
 </button>
 
 
-<input id="charge"
-type="number"
-placeholder="مقدار شارژ">
+
+<p id="status">
+
+کیف پول وصل نیست
+
+</p>
 
 
-<button id="chargeBtn">
-شارژ تستی
-</button>
-
-
-</div>
-
-
-<div class="card">
-
-<h3>📜 تاریخچه</h3>
-
-<div id="history" class="history"></div>
 
 </div>
 
 
 </div>
+
+
+
+
+
 <script>
 
-let balance = Number(localStorage.getItem("dogs")) || 10000;
 
-let history = JSON.parse(localStorage.getItem("history")) || [];
+const tonConnectUI =
 
-let playing = false;
-let timer = null;
-let multiplier = 1;
+new TON_CONNECT_UI.TonConnectUI({
+
+manifestUrl:
+"https://YOUR-DOMAIN.com/tonconnect-manifest.json"
+
+});
+
+
+
+
+tonConnectUI.onStatusChange(wallet=>{
+
+
+if(wallet){
+
+
+document.getElementById("status")
+.innerHTML=
+"✅ کیف پول متصل شد";
+
+
+}else{
+
+
+document.getElementById("status")
+.innerHTML=
+"❌ کیف پول وصل نیست";
+
+
+}
+
+
+});
+
+
+
+
+
+
+async function deposit(){
+
+
+if(!tonConnectUI.connected){
+
+
+await tonConnectUI.openModal();
+
+
+return;
+
+}
+
+
+
+let wallet =
+tonConnectUI.account.address;
+
+
+
+fetch("/check-deposit",{
+
+method:"POST",
+
+headers:{
+
+"Content-Type":"application/json"
+
+},
+
+
+body:JSON.stringify({
+
+wallet:wallet
+
+})
+
+
+})
+
+
+.then(res=>res.json())
+
+
+.then(data=>{
+
+
+if(data.ok){
+
+
+document.getElementById("balance")
+.innerHTML=data.balance;
+
+
+alert("واریز تایید شد");
+
+
+}else{
+
+
+alert("هنوز واریزی پیدا نشد");
+
+
+}
+
+
+});
+
+
+}
+
+
+
+</script>
+
+
+</body>
+
+</html>
+
+// ===== قسمت ۲ : مدیریت واریز =====
 
 
 function saveData(){
@@ -205,12 +261,14 @@ localStorage.setItem(
 balance
 );
 
+
 localStorage.setItem(
 "history",
 JSON.stringify(history)
 );
 
 }
+
 
 
 
@@ -222,22 +280,125 @@ balance.toFixed(0);
 
 document.getElementById("history").innerHTML =
 history.slice().reverse()
-.map(item => "<p>"+item+"</p>")
+.map(item=>"<p>"+item+"</p>")
 .join("");
 
 }
+
+
+
+
+function confirmDeposit(){
+
+
+let amount =
+Number(document.getElementById("depositAmount").value);
+
+
+
+if(!Number.isFinite(amount) || amount<=0){
+
+alert("مقدار واریز اشتباه است");
+
+return;
+
+}
+
+
+
+
+balance += amount;
+
+
+
+history.push(
+"💳 واریز +"+
+amount+
+" DOGS"
+);
+
+
+
+saveData();
 
 
 updateScreen();
 
 
 
-document.getElementById("startBtn")
-.onclick = function(){
+alert(
+"واریز ثبت شد"
+);
 
 
-if(playing){
+
+document.getElementById("depositAmount").value="";
+
+}
+
+
+
+
+function showDeposit(){
+
+
+let box =
+document.getElementById("depositBox");
+
+
+if(box.style.display==="none"){
+
+box.style.display="block";
+
+}else{
+
+box.style.display="none";
+
+}
+
+
+}
+
+
+
+
+function copyWallet(){
+
+
+let wallet =
+"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h";
+
+
+
+navigator.clipboard.writeText(wallet);
+
+
+
+alert(
+"ولت کپی شد"
+);
+
+
+}
+
+// ===== قسمت ۳ : ضدباگ و کنترل بازی =====
+
+
+let gameRunning = false;
+let gameTimer = null;
+let currentMultiplier = 1;
+
+
+
+function startRocketGame(){
+
+
+if(gameRunning){
+
+alert("بازی در حال اجراست");
+
 return;
+
 }
 
 
@@ -255,7 +416,8 @@ Number(document.getElementById("target").value);
 if(!Number.isFinite(bet) ||
 !Number.isFinite(target)){
 
-alert("عدد وارد کن");
+alert("عدد صحیح وارد کن");
+
 return;
 
 }
@@ -265,6 +427,7 @@ return;
 if(bet <= 0){
 
 alert("شرط باید بیشتر از صفر باشد");
+
 return;
 
 }
@@ -274,6 +437,7 @@ return;
 if(bet > balance){
 
 alert("موجودی کافی نیست");
+
 return;
 
 }
@@ -282,7 +446,8 @@ return;
 
 if(target < 1.10){
 
-alert("ضریب کم است");
+alert("ضریب حداقل 1.10 است");
+
 return;
 
 }
@@ -296,76 +461,68 @@ saveData();
 updateScreen();
 
 
+gameRunning = true;
 
-playing = true;
-
-document.getElementById("startBtn").disabled=true;
-
-
-multiplier = 1;
+currentMultiplier = 1;
 
 
 
-document.getElementById("rocket")
-.style.right="20px";
+document.getElementById("startBtn")
+.disabled = true;
 
 
 
-timer=setInterval(function(){
+gameTimer = setInterval(()=>{
 
 
-multiplier += 0.05;
+currentMultiplier += 0.05;
 
 
 
 document.getElementById("multi")
 .innerHTML =
-multiplier.toFixed(2);
+currentMultiplier.toFixed(2);
 
 
 
 document.getElementById("rocket")
 .style.right =
-(20 + multiplier*25)+"px";
-
+(20 + currentMultiplier*25)+"px";
 
 
 
 
 // رسیدن به ضریب انتخابی
 
-if(multiplier >= target){
+if(currentMultiplier >= target){
 
 
-clearInterval(timer);
-
-
-let win =
+let prize =
 bet * target;
 
 
 
-balance += win;
+balance += prize;
 
 
 
 history.push(
-"🚀 برد | x"+
-target.toFixed(2)+
-" | +"+
-win.toFixed(0)+
+"🚀 برد x"+
+target+
+" +"+
+prize+
 " DOGS"
 );
 
 
 
-finish(
-"بردی "+win.toFixed(0)+" DOGS"
+endGame(
+"بردی "+prize+" DOGS"
 );
 
 
-}
 
+}
 
 
 
@@ -375,20 +532,15 @@ finish(
 else if(Math.random() < 0.02){
 
 
-
-clearInterval(timer);
-
-
-
 history.push(
-"💥 باخت | انفجار x"+
-multiplier.toFixed(2)
+"💥 انفجار x"+
+currentMultiplier.toFixed(2)
 );
 
 
 
-finish(
-"موشک منفجر شد 💥"
+endGame(
+"موشک منفجر شد"
 );
 
 
@@ -396,24 +548,28 @@ finish(
 }
 
 
-
 },400);
 
 
 
-};
+}
 
 
 
 
-function finish(message){
+function endGame(msg){
 
 
-playing=false;
+clearInterval(gameTimer);
+
+
+
+gameRunning=false;
 
 
 document.getElementById("startBtn")
 .disabled=false;
+
 
 
 saveData();
@@ -421,11 +577,8 @@ saveData();
 updateScreen();
 
 
-alert(message);
 
-
-
-multiplier=1;
+currentMultiplier=1;
 
 
 document.getElementById("multi")
@@ -436,78 +589,1805 @@ document.getElementById("rocket")
 .style.right="20px";
 
 
+
+alert(msg);
+
+}
+    <button id="startBtn" onclick="startRocketGame()">
+شروع 🚀
+    </button>
+
+    // ===== قسمت ۴ : امنیت و ضدباگ =====
+
+
+// جلوگیری از وارد کردن عدد غیرمجاز
+
+function cleanNumber(id){
+
+let input =
+document.getElementById(id);
+
+
+input.addEventListener("input",()=>{
+
+
+let value =
+Number(input.value);
+
+
+
+if(value < 0){
+
+input.value = 0;
+
+}
+
+
+});
+
 }
 
 
 
-</script>
-
-    <script>
-
-document.getElementById("chargeBtn").onclick=function(){
-
-let amount =
-Number(document.getElementById("charge").value);
+cleanNumber("bet");
+cleanNumber("target");
+cleanNumber("depositAmount");
 
 
-if(!Number.isFinite(amount) || amount<=0){
 
-alert("مقدار شارژ اشتباه است");
-return;
+
+
+// جلوگیری از چندبار اجرا شدن دکمه‌ها
+
+
+function lockButton(btn,time=1000){
+
+
+let button =
+document.getElementById(btn);
+
+
+button.disabled=true;
+
+
+setTimeout(()=>{
+
+button.disabled=false;
+
+},time);
+
 
 }
 
 
 
-balance += amount;
 
 
+// بررسی سالم بودن موجودی
 
-history.push(
-"💳 شارژ +"+
-amount+
-" DOGS"
-);
 
+function checkBalance(){
+
+
+if(!Number.isFinite(balance)
+|| balance < 0){
+
+
+balance=0;
 
 
 saveData();
 
+
 updateScreen();
 
 
+}
+
+
+
+}
+
+
+
+
+
+setInterval(()=>{
+
+
+checkBalance();
+
+
+},2000);
+
+
+
+
+
+
+// جلوگیری از پاک شدن ناگهانی اطلاعات
+
+
+window.addEventListener(
+"beforeunload",
+()=>{
+
+
+saveData();
+
+
+});
+
+
+
+
+
+// بازیابی خودکار بعد از باز شدن سایت
+
+
+window.addEventListener(
+"load",
+()=>{
+
+
+updateScreen();
+
+
+});
+
+
+
+
+
+// جلوگیری از اجرای همزمان بازی و واریز
+
+
+function canDeposit(){
+
+
+if(gameRunning){
+
+
 alert(
-"شارژ انجام شد"
+"ابتدا بازی را تمام کن"
+);
+
+
+return false;
+
+
+}
+
+
+return true;
+
+
+}
+
+    /* ===== قسمت ۵ : ظاهر حرفه ای ===== */
+
+
+.game{
+background:
+radial-gradient(circle,#102840,#02050b);
+}
+
+
+
+#rocket{
+
+animation:
+floatRocket 1.5s infinite alternate;
+
+}
+
+
+
+@keyframes floatRocket{
+
+from{
+
+transform:translateY(0);
+
+}
+
+to{
+
+transform:translateY(-15px);
+
+}
+
+}
+
+
+
+
+.multi{
+
+font-weight:bold;
+
+text-shadow:
+0 0 15px #ffd700;
+
+}
+
+
+
+button:hover{
+
+transform:scale(1.03);
+
+}
+
+
+
+.card{
+
+box-shadow:
+0 0 15px rgba(0,190,255,.15);
+
+}
+
+
+
+
+.wallet{
+
+background:#020711;
+
+padding:10px;
+
+border-radius:10px;
+
+}
+
+    // ===== قسمت ۶ : سیستم کاربر =====
+
+
+// ساخت شناسه کاربر
+
+let userId =
+localStorage.getItem("userId");
+
+
+
+if(!userId){
+
+userId =
+"USER-" +
+Math.random()
+.toString(36)
+.substring(2,10);
+
+
+
+localStorage.setItem(
+"userId",
+userId
+);
+
+}
+
+
+
+
+// نمایش شناسه کاربر
+
+function showUser(){
+
+
+let box =
+document.getElementById("userId");
+
+
+if(box){
+
+box.innerHTML=userId;
+
+}
+
+
+}
+
+
+showUser();
+
+
+
+
+
+// ساخت موجودی اختصاصی
+
+let userBalanceKey =
+"balance_" + userId;
+
+
+
+if(localStorage.getItem(userBalanceKey)===null){
+
+
+localStorage.setItem(
+userBalanceKey,
+10000
+);
+
+
+}
+
+
+
+
+// جایگزینی موجودی با موجودی کاربر
+
+balance =
+Number(
+localStorage.getItem(userBalanceKey)
 );
 
 
 
-};
+
+
+function saveUserBalance(){
+
+
+localStorage.setItem(
+userBalanceKey,
+balance
+);
+
+
+saveData();
+
+
+}
 
 
 
-document.getElementById("copy")
-.onclick=function(){
+
+
+// هر بار ذخیره بازی
+
+window.addEventListener(
+"beforeunload",
+()=>{
+
+saveUserBalance();
+
+});
+
+<div class="card">
+
+شناسه کاربر:
+
+<span id="userId"></span>
+
+</div>
+
+    // ===== قسمت ۸ : سیستم ثبت واریز =====
+
+
+// ثبت درخواست واریز
+
+function requestDeposit(){
 
 
 let wallet =
-"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h";
+localStorage.getItem("wallet_"+userId);
 
 
-navigator.clipboard.writeText(wallet);
+
+if(!wallet){
+
+
+alert("اول کیف پول را وصل کن");
+
+return;
+
+
+}
+
+
+
+
+fetch("/check-deposit",{
+
+method:"POST",
+
+headers:{
+
+"Content-Type":"application/json"
+
+},
+
+
+body:JSON.stringify({
+
+userId:userId,
+
+wallet:wallet
+
+})
+
+
+})
+
+
+.then(res=>res.json())
+
+
+.then(data=>{
+
+
+if(data.ok){
+
+
+balance =
+Number(data.balance);
+
+
+
+saveUserBalance();
+
+updateScreen();
+
 
 
 alert(
-"ولت کپی شد"
+"✅ واریز تایید شد"
 );
 
+
+
+}else{
+
+
+alert(
+"⏳ هنوز واریزی تایید نشده"
+);
+
+
+
+}
+
+
+
+})
+
+
+.catch(()=>{
+
+
+alert(
+"خطا در ارتباط با سرور"
+);
+
+
+});
+
+
+}
+
+<button onclick="requestDeposit()">
+🔍 بررسی واریز
+</button>
+
+    // ===== قسمت ۹ : آماده سازی بررسی واریز DOGS =====
+
+
+// ولت مالک (فقط داخل سرور)
+const OWNER_WALLET =
+"UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h";
+
+
+// تراکنش‌هایی که قبلا ثبت شده‌اند
+let usedTransactions = [];
+
+
+
+
+// بررسی واریز کاربر
+
+async function checkDeposit(userWallet){
+
+
+
+// اینجا بعداً API شبکه TON وصل می‌شود
+
+let transactions = [];
+
+
+
+
+// پیدا کردن تراکنش معتبر
+
+for(let tx of transactions){
+
+
+
+// مقصد باید ولت مالک باشد
+
+if(tx.to !== OWNER_WALLET){
+
+continue;
+
+}
+
+
+
+// باید DOGS باشد
+
+if(tx.token !== "DOGS"){
+
+continue;
+
+}
+
+
+
+// جلوگیری از ثبت دوباره
+
+if(
+usedTransactions.includes(tx.hash)
+){
+
+continue;
+
+}
+
+
+
+
+usedTransactions.push(tx.hash);
+
+
+
+return {
+
+ok:true,
+
+amount:tx.amount,
+
+hash:tx.hash,
+
+comment:tx.comment
 
 };
 
 
 
+}
+
+
+
+
+return {
+
+ok:false,
+
+message:"واریزی پیدا نشد"
+
+};
+
+
+
+}
+
+    // ===== قسمت ۱۱ : بررسی کامنت واریز =====
+
+
+let comment = "";
+
+
+
+if(event.actions[0].JettonTransfer){
+
+comment =
+event.actions[0]
+.JettonTransfer
+.comment || "";
+
+}
+
+
+
+
+// فرمت:
+// ULTRA 5000 DOGS @IQ7XA
+
+
+let format =
+/ULTRA\s+(\d+)\s+DOGS\s+@([A-Z0-9]+)/i;
+
+
+
+let match =
+comment.match(format);
+
+
+
+if(!match){
+
+
+continue;
+
+
+}
+
+
+
+
+let amount =
+Number(match[1]);
+
+
+
+let userCode =
+match[2];
+
+
+
+
+
+return {
+
+ok:true,
+
+amount:amount,
+
+code:userCode,
+
+hash:event.event_id
+
+};
+
+    // ===== قسمت ۱۲ : اتصال کد کاربر به موجودی =====
+
+
+// حساب کاربران
+let playerAccounts = {};
+
+
+
+// ساخت حساب جدید
+
+function createPlayer(code){
+
+
+if(!playerAccounts[code]){
+
+
+playerAccounts[code]={
+
+balance:0,
+
+deposits:[]
+
+};
+
+
+}
+
+
+}
+
+
+
+
+// اضافه کردن واریز به بازیکن
+
+function addDepositToPlayer(data){
+
+
+
+let code =
+data.code;
+
+
+
+let amount =
+data.amount;
+
+
+
+createPlayer(code);
+
+
+
+
+
+// جلوگیری از ثبت دوباره
+
+if(
+playerAccounts[code]
+.deposits
+.includes(data.hash)
+){
+
+return false;
+
+}
+
+
+
+
+
+playerAccounts[code]
+.balance += amount;
+
+
+
+playerAccounts[code]
+.deposits
+.push(data.hash);
+
+
+
+
+
+return true;
+
+
+
+}
+
+
+
+
+
+
+// بعد از تایید checkDeposit
+
+app.post("/check-deposit", async(req,res)=>{
+
+
+const result =
+await checkDeposit(
+req.body.wallet
+);
+
+
+
+
+if(!result.ok){
+
+
+return res.json({
+
+ok:false,
+
+message:"واریز پیدا نشد"
+
+});
+
+
+}
+
+
+
+
+
+let added =
+addDepositToPlayer(result);
+
+
+
+
+
+if(added){
+
+
+return res.json({
+
+ok:true,
+
+code:result.code,
+
+amount:result.amount,
+
+message:"DOGS اضافه شد"
+
+
+});
+
+
+}
+
+
+
+return res.json({
+
+ok:false,
+
+message:"قبلا ثبت شده"
+
+});
+
+
+
+});
+
+    // ===== قسمت ۱۳ : API موجودی بازیکن =====
+
+// دریافت موجودی بازیکن با کد کاربری
+
+app.get("/player-balance/:code", (req, res) => {
+
+    const code = req.params.code;
+
+    // اگر حساب وجود نداشت
+    if (!playerAccounts[code]) {
+
+        return res.json({
+            ok: false,
+            message: "حساب بازیکن پیدا نشد"
+        });
+
+    }
+
+    // ارسال موجودی
+    return res.json({
+
+        ok: true,
+
+        code: code,
+
+        balance: playerAccounts[code].balance
+
+    });
+
+});
+
+
+
+// ===== کم کردن موجودی بازیکن =====
+
+function removePlayerBalance(code, amount) {
+
+    if (!playerAccounts[code]) {
+        return false;
+    }
+
+    if (amount <= 0) {
+        return false;
+    }
+
+    if (playerAccounts[code].balance < amount) {
+        return false;
+    }
+
+    playerAccounts[code].balance -= amount;
+
+    return true;
+}
+
+
+
+// ===== اضافه کردن مستقیم موجودی =====
+
+function addPlayerBalance(code, amount) {
+
+    if (!playerAccounts[code]) {
+        createPlayer(code);
+    }
+
+    if (amount <= 0) {
+        return false;
+    }
+
+    playerAccounts[code].balance += amount;
+
+    return true;
+}
+
+    // ===== قسمت ۱۴ : اتصال کد @IQ7XA به حساب بازیکن =====
+
+// ثبت / اتصال کد بازیکن
+app.post("/connect-player", (req, res) => {
+
+    let code = req.body.code;
+
+    if (!code) {
+        return res.json({
+            ok: false,
+            message: "کد بازیکن وارد نشده"
+        });
+    }
+
+    // حذف @ از ابتدای کد
+    code = String(code).trim().replace(/^@/, "");
+
+    // تبدیل به حروف بزرگ
+    code = code.toUpperCase();
+
+    // ساخت حساب در صورت نبودن
+    createPlayer(code);
+
+    return res.json({
+        ok: true,
+        code: code,
+        balance: playerAccounts[code].balance,
+        message: "حساب بازیکن با موفقیت متصل شد"
+    });
+
+});
+
+
+
+// ===== دریافت اطلاعات کامل بازیکن =====
+
+app.get("/player/:code", (req, res) => {
+
+    let code = req.params.code;
+
+    code = String(code).trim().replace(/^@/, "");
+
+    code = code.toUpperCase();
+
+    if (!playerAccounts[code]) {
+
+        return res.json({
+            ok: false,
+            message: "بازیکن پیدا نشد"
+        });
+
+    }
+
+    return res.json({
+
+        ok: true,
+
+        player: {
+            code: code,
+            balance: playerAccounts[code].balance,
+            deposits: playerAccounts[code].deposits
+        }
+
+    });
+
+});
+
+    // ===== قسمت ۱۵ : ذخیره دائمی حساب بازیکنان =====
+
+const fs = require("fs");
+const path = require("path");
+
+const playersFile = path.join(__dirname, "players.json");
+
+
+// ===== بارگذاری حساب‌ها =====
+
+function loadPlayerAccounts() {
+
+    try {
+
+        if (fs.existsSync(playersFile)) {
+
+            const data = fs.readFileSync(
+                playersFile,
+                "utf8"
+            );
+
+            playerAccounts = JSON.parse(data);
+
+        }
+
+    } catch (error) {
+
+        console.log(
+            "خطا در بارگذاری حساب‌ها:",
+            error.message
+        );
+
+        playerAccounts = {};
+
+    }
+
+}
+
+
+// ===== ذخیره حساب‌ها =====
+
+function savePlayerAccounts() {
+
+    try {
+
+        fs.writeFileSync(
+            playersFile,
+            JSON.stringify(
+                playerAccounts,
+                null,
+                2
+            ),
+            "utf8"
+        );
+
+    } catch (error) {
+
+        console.log(
+            "خطا در ذخیره حساب‌ها:",
+            error.message
+        );
+
+    }
+
+}
+
+
+// ===== بارگذاری هنگام اجرای سرور =====
+
+loadPlayerAccounts();
+
+
+// ===== ذخیره خودکار بعد از تغییر موجودی =====
+
+const oldAddDepositToPlayer =
+    addDepositToPlayer;
+
+addDepositToPlayer = function(data) {
+
+    const result =
+        oldAddDepositToPlayer(data);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+
+
+// ===== ذخیره بعد از اضافه کردن موجودی =====
+
+const oldAddPlayerBalance =
+    addPlayerBalance;
+
+addPlayerBalance = function(code, amount) {
+
+    const result =
+        oldAddPlayerBalance(code, amount);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+
+
+// ===== ذخیره بعد از کم کردن موجودی =====
+
+const oldRemovePlayerBalance =
+    removePlayerBalance;
+
+removePlayerBalance = function(code, amount) {
+
+    const result =
+        oldRemovePlayerBalance(code, amount);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+        // ===== قسمت ۱۵ : ذخیره دائمی حساب بازیکنان =====
+
+const fs = require("fs");
+const path = require("path");
+
+const playersFile = path.join(__dirname, "players.json");
+
+
+// ===== بارگذاری حساب‌ها =====
+
+function loadPlayerAccounts() {
+
+    try {
+
+        if (fs.existsSync(playersFile)) {
+
+            const data = fs.readFileSync(
+                playersFile,
+                "utf8"
+            );
+
+            playerAccounts = JSON.parse(data);
+
+        }
+
+    } catch (error) {
+
+        console.log(
+            "خطا در بارگذاری حساب‌ها:",
+            error.message
+        );
+
+        playerAccounts = {};
+
+    }
+
+}
+
+
+// ===== ذخیره حساب‌ها =====
+
+function savePlayerAccounts() {
+
+    try {
+
+        fs.writeFileSync(
+            playersFile,
+            JSON.stringify(
+                playerAccounts,
+                null,
+                2
+            ),
+            "utf8"
+        );
+
+    } catch (error) {
+
+        console.log(
+            "خطا در ذخیره حساب‌ها:",
+            error.message
+        );
+
+    }
+
+}
+
+
+// ===== بارگذاری هنگام اجرای سرور =====
+
+loadPlayerAccounts();
+
+
+// ===== ذخیره خودکار بعد از تغییر موجودی =====
+
+const oldAddDepositToPlayer =
+    addDepositToPlayer;
+
+addDepositToPlayer = function(data) {
+
+    const result =
+        oldAddDepositToPlayer(data);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+
+
+// ===== ذخیره بعد از اضافه کردن موجودی =====
+
+const oldAddPlayerBalance =
+    addPlayerBalance;
+
+addPlayerBalance = function(code, amount) {
+
+    const result =
+        oldAddPlayerBalance(code, amount);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+
+
+// ===== ذخیره بعد از کم کردن موجودی =====
+
+const oldRemovePlayerBalance =
+    removePlayerBalance;
+
+removePlayerBalance = function(code, amount) {
+
+    const result =
+        oldRemovePlayerBalance(code, amount);
+
+    if (result) {
+        savePlayerAccounts();
+    }
+
+    return result;
+
+};
+
+    <!-- ===== قسمت ۱۶ : نمایش موجودی بازیکن ===== -->
+
+<div id="playerAccountBox">
+
+    <div>
+        کد بازیکن:
+        <span id="playerCode">---</span>
+    </div>
+
+    <div>
+        موجودی:
+        <span id="playerBalance">0</span>
+        DOGS
+    </div>
+
+</div>
+
+
+<script>
+
+// ===== کد بازیکن =====
+
+let currentPlayerCode = "";
+
+
+// ===== اتصال بازیکن =====
+
+async function connectPlayer(code) {
+
+    try {
+
+        const response = await fetch(
+            "/connect-player",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    code: code
+                })
+            }
+        );
+
+
+        const data = await response.json();
+
+
+        if (!data.ok) {
+
+            console.log(data.message);
+
+            return false;
+
+        }
+
+
+        currentPlayerCode = data.code;
+
+
+        document.getElementById(
+            "playerCode"
+        ).textContent =
+            "@" + data.code;
+
+
+        document.getElementById(
+            "playerBalance"
+        ).textContent =
+            data.balance;
+
+
+        return true;
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "خطا در اتصال بازیکن:",
+            error
+        );
+
+        return false;
+
+    }
+
+}
+
+
+
+// ===== دریافت موجودی =====
+
+async function loadPlayerBalance() {
+
+    if (!currentPlayerCode) {
+        return;
+    }
+
+
+    try {
+
+        const response = await fetch(
+            "/player-balance/" +
+            encodeURIComponent(
+                currentPlayerCode
+            )
+        );
+
+
+        const data =
+            await response.json();
+
+
+        if (data.ok) {
+
+            document.getElementById(
+                "playerBalance"
+            ).textContent =
+                data.balance;
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "خطا در دریافت موجودی:",
+            error
+        );
+
+    }
+
+}
+
+
+
+// ===== نمونه اتصال @IQ7XA =====
+
+// برای تست می‌توانی این خط را فعال کنی:
+//
+// connectPlayer("@IQ7XA");
+
+
+// ===== بروزرسانی خودکار موجودی =====
+
+setInterval(
+    loadPlayerBalance,
+    5000
+);
+
+                    </script>
+
+        <!-- ===== قسمت ۱۷ : اتصال خودکار کد بازیکن ===== -->
+
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    // کد بازیکن
+    const playerCode = "@IQ7XA";
+
+    // اتصال خودکار
+    connectPlayer(playerCode);
+
+});
+
 </script>
 
+        <!-- ===== قسمت ۱۸ : بروزرسانی موجودی بعد از واریز ===== -->
 
-</body>
-</html>
+<script>
+
+async function refreshPlayerBalance() {
+
+    if (!currentPlayerCode) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch(
+            "/player-balance/" +
+            encodeURIComponent(currentPlayerCode)
+        );
+
+        const data = await response.json();
+
+        if (data.ok) {
+
+            const balanceElement =
+                document.getElementById("playerBalance");
+
+            if (balanceElement) {
+
+                balanceElement.textContent =
+                    data.balance;
+
+            }
+
+        }
+
+    } catch (error) {
+
+        console.log(
+            "خطا در بروزرسانی موجودی:",
+            error
+        );
+
+    }
+
+}
+
+
+// هر ۵ ثانیه موجودی بررسی شود
+setInterval(
+    refreshPlayerBalance,
+    5000
+);
+
+
+// بعد از لود صفحه هم یک بار بررسی شود
+setTimeout(
+    refreshPlayerBalance,
+    1000
+);
+
+</script>
+
+        <!-- ===== قسمت ۱۹ : دکمه اتصال بازیکن ===== -->
+
+<div id="connectPlayerBox">
+
+    <input
+        id="playerCodeInput"
+        type="text"
+        placeholder="@IQ7XA"
+        autocomplete="off"
+    >
+
+    <button
+        type="button"
+        onclick="connectPlayerFromInput()"
+    >
+        اتصال حساب
+    </button>
+
+    <div id="connectPlayerMessage"></div>
+
+</div>
+
+
+<script>
+
+async function connectPlayerFromInput() {
+
+    const input =
+        document.getElementById("playerCodeInput");
+
+    const message =
+        document.getElementById("connectPlayerMessage");
+
+    let code =
+        input.value.trim();
+
+    if (!code) {
+
+        message.textContent =
+            "کد بازیکن را وارد کنید";
+
+        return;
+
+    }
+
+
+    const success =
+        await connectPlayer(code);
+
+
+    if (success) {
+
+        message.textContent =
+            "حساب با موفقیت متصل شد";
+
+        // بروزرسانی موجودی
+        await refreshPlayerBalance();
+
+    } else {
+
+        message.textContent =
+            "اتصال حساب انجام نشد";
+
+    }
+
+}
+
+</script>
+
+        <!-- ===== قسمت ۲۰ : تست اتصال و موجودی ===== -->
+
+<script>
+
+async function testPlayerAccount() {
+
+    const code = "@IQ7XA";
+
+    console.log("شروع تست حساب:", code);
+
+
+    try {
+
+        // اتصال حساب
+        const connectResponse = await fetch(
+            "/connect-player",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    code: code
+                })
+            }
+        );
+
+
+        const connectData =
+            await connectResponse.json();
+
+
+        console.log(
+            "نتیجه اتصال:",
+            connectData
+        );
+
+
+        if (!connectData.ok) {
+
+            console.log(
+                "اتصال بازیکن ناموفق بود"
+            );
+
+            return;
+
+        }
+
+
+        // دریافت موجودی
+        const balanceResponse = await fetch(
+            "/player-balance/" +
+            encodeURIComponent(connectData.code)
+        );
+
+
+        const balanceData =
+            await balanceResponse.json();
+
+
+        console.log(
+            "موجودی بازیکن:",
+            balanceData
+        );
+
+
+        // نمایش موجودی در صفحه
+        const balanceElement =
+            document.getElementById(
+                "playerBalance"
+            );
+
+
+        if (
+            balanceElement &&
+            balanceData.ok
+        ) {
+
+            balanceElement.textContent =
+                balanceData.balance;
+
+        }
+
+
+        console.log(
+            "تست حساب با موفقیت انجام شد"
+        );
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "خطا در تست حساب:",
+            error
+        );
+
+    }
+
+}
+
+
+// اجرای تست بعد از آماده شدن صفحه
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function () {
+
+        testPlayerAccount();
+
+    }
+);
+
+               </script>
+
+        // ===== قسمت ۲۱ : اتصال نهایی واریز به حساب بازیکن =====
+
+// تابع نهایی برای ثبت واریز بازیکن
+async function processPlayerDeposit(code, amount, hash) {
+
+    try {
+
+        code = String(code)
+            .trim()
+            .replace(/^@/, "")
+            .toUpperCase();
+
+
+        if (!code) {
+
+            return {
+                ok: false,
+                message: "کد بازیکن وارد نشده"
+            };
+
+        }
+
+
+        if (!amount || Number(amount) <= 0) {
+
+            return {
+                ok: false,
+                message: "مقدار واریز نامعتبر است"
+            };
+
+        }
+
+
+        createPlayer(code);
+
+
+        const added = addDepositToPlayer({
+
+            code: code,
+
+            amount: Number(amount),
+
+            hash: hash
+
+        });
+
+
+        if (!added) {
+
+            return {
+                ok: false,
+                message: "این واریز قبلا ثبت شده"
+            };
+
+        }
+
+
+        savePlayerAccounts();
+
+
+        return {
+
+            ok: true,
+
+            code: code,
+
+            amount: Number(amount),
+
+            balance: playerAccounts[code].balance,
+
+            message: "واریز با موفقیت به حساب بازیکن اضافه شد"
+
+        };
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "خطا در ثبت واریز بازیکن:",
+            error
+        );
+
+
+        return {
+
+            ok: false,
+
+            message: "خطا در ثبت واریز"
+
+        };
+
+    }
+
+}
+
+
+
+// ===== API نهایی ثبت واریز =====
+
+app.post("/player-deposit", async (req, res) => {
+
+    try {
+
+        const code = req.body.code;
+
+        const amount = req.body.amount;
+
+        const hash = req.body.hash;
+
+
+        if (!code || !amount || !hash) {
+
+            return res.json({
+
+                ok: false,
+
+                message: "اطلاعات واریز کامل نیست"
+
+            });
+
+        }
+
+
+        const result =
+            await processPlayerDeposit(
+                code,
+                amount,
+                hash
+            );
+
+
+        return res.json(result);
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "خطای API واریز:",
+            error
+        );
+
+
+        return res.json({
+
+            ok: false,
+
+            message: "خطای سرور"
+
+        });
+
+    }
+
+});
+
+
+
+// ===== اتصال خودکار بازیکن IQ7XA =====
+
+createPlayer("IQ7XA");
+
+console.log(
+    "حساب @IQ7XA آماده است."
+);
+
+console.log(
+    "موجودی:",
+    playerAccounts["IQ7XA"].balance,
+    "DOGS"
+);
