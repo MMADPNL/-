@@ -148,3 +148,104 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
 print("DOGS BOT RUNNING")
 app.run_polling()
+
+# DOGS LIMBO BOT - PART 2
+# تایید و رد واریز و برداشت توسط مالک
+
+# این بخش را به bot.py قبلی اضافه کن
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+
+async def admin_request_buttons(update, context):
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != OWNER_ID:
+        return
+
+    data = query.data.split("_")
+
+    if data[0] == "dep":
+        req_id = int(data[2])
+
+        cur.execute(
+            "SELECT user_id, amount FROM requests WHERE id=? AND type='deposit'",
+            (req_id,)
+        )
+
+        row = cur.fetchone()
+
+        if not row:
+            return
+
+        uid, amount = row
+
+        if data[1] == "ok":
+            change_balance(uid, amount)
+
+            cur.execute(
+                "UPDATE requests SET status='approved' WHERE id=?",
+                (req_id,)
+            )
+
+            await context.bot.send_message(
+                uid,
+                "✅ واریز شما تایید شد"
+            )
+
+            await query.edit_message_text(
+                "✅ واریز تایید شد"
+            )
+
+        else:
+
+            cur.execute(
+                "UPDATE requests SET status='rejected' WHERE id=?",
+                (req_id,)
+            )
+
+            await context.bot.send_message(
+                uid,
+                "❌ واریز شما رد شد"
+            )
+
+            await query.edit_message_text(
+                "❌ واریز رد شد"
+            )
+
+
+    elif data[0] == "with":
+
+        uid = int(data[2])
+        amount = int(data[3])
+
+        if data[1] == "ok":
+
+            if balance(uid) >= amount:
+                change_balance(uid, -amount)
+
+            await context.bot.send_message(
+                uid,
+                "✅ برداشت شما تایید شد"
+            )
+
+            await query.edit_message_text(
+                "✅ برداشت تایید شد"
+            )
+
+        else:
+
+            await context.bot.send_message(
+                uid,
+                "❌ برداشت شما رد شد"
+            )
+
+            await query.edit_message_text(
+                "❌ برداشت رد شد"
+            )
+
+
+# این خط را هم به هندلرها اضافه کن:
+# app.add_handler(CallbackQueryHandler(admin_request_buttons))
