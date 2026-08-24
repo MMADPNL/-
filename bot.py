@@ -11,7 +11,7 @@ import threading
 import asyncio
 
 # ------ تنظیمات اولیه ------
-TOKEN = "توکن_ربات_ت_را_اینجا_بگذار"  # از @BotFather بگیر
+TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
 OWNER_ID = 8552447077
 INITIAL_BALANCE = 1000
 OWNER_INITIAL = 10000
