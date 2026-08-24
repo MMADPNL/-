@@ -7,11 +7,13 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
 import sqlite3
 
 
-TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
-OWNER_ID = 8552447077
+TOKEN = "PUT_TOKEN_HERE"
+OWNER_ID = 123456789
+
 
 
 db = sqlite3.connect(
@@ -22,22 +24,23 @@ db = sqlite3.connect(
 cur = db.cursor()
 
 
+
 cur.execute("""
 CREATE TABLE IF NOT EXISTS users(
-id INTEGER PRIMARY KEY,
-balance INTEGER DEFAULT 10000
+    id INTEGER PRIMARY KEY,
+    balance INTEGER DEFAULT 10000
 )
 """)
 
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS requests(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-user_id INTEGER,
-type TEXT,
-amount INTEGER,
-info TEXT,
-status TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    type TEXT,
+    amount INTEGER,
+    info TEXT,
+    status TEXT
 )
 """)
 
@@ -45,15 +48,20 @@ status TEXT
 db.commit()
 
 
+
 def add_user(uid):
+
     cur.execute(
         "INSERT OR IGNORE INTO users(id) VALUES(?)",
         (uid,)
     )
+
     db.commit()
 
 
-def balance(uid):
+
+def get_balance(uid):
+
     add_user(uid)
 
     cur.execute(
@@ -64,7 +72,9 @@ def balance(uid):
     return cur.fetchone()[0]
 
 
+
 def change_balance(uid, amount):
+
     add_user(uid)
 
     cur.execute(
@@ -75,42 +85,59 @@ def change_balance(uid, amount):
     db.commit()
 
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid = update.effective_user.id
 
-    kb = [
+
+    keyboard = [
+
         [
             InlineKeyboardButton(
                 "🚀 LIMBO",
                 callback_data="limbo"
             )
         ],
+
         [
             InlineKeyboardButton(
                 "💳 Deposit",
                 callback_data="deposit"
             ),
+
             InlineKeyboardButton(
                 "📤 Withdraw",
                 callback_data="withdraw"
             )
         ],
+
         [
+            InlineKeyboardButton(
+                "👑 Admin Panel",
+                callback_data="admin"
+            )
+        ]
+
+    ]
 
 
+    await update.message.reply_text(
+        f"""
+🚀 DOGS LIMBO
 
-    
-                await update.message.reply_text(
-        f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
-        reply_markup=InlineKeyboardMarkup(kb)
+💰 Balance:
+{get_balance(uid)} DOGS
+""",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
+
     await q.answer()
+
 
 
     if q.data == "limbo":
@@ -120,9 +147,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+
     elif q.data == "deposit":
 
         context.user_data["step"] = "deposit"
+
 
         await q.message.reply_text(
 """
@@ -132,53 +161,35 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ULTRA 5000 DOGS @IQ7XA
 
+
 ولت:
 
 UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
 
-شات یا لینک تراکنش را بفرست.
+
+شات یا لینک تراکنش را ارسال کن.
 """
         )
+
 
 
     elif q.data == "withdraw":
 
         context.user_data["step"] = "withdraw_amount"
 
+
         await q.message.reply_text(
-            "📤 مقدار DOGS برای برداشت را بفرست."
+            "📤 مقدار برداشت DOGS را بفرست."
         )
+
 
 
     elif q.data == "admin":
 
         if q.from_user.id == OWNER_ID:
 
-            kb = [
-                [
-                    InlineKeyboardButton(
-                        "📊 آمار",
-                        callback_data="stats"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "📋 درخواست‌ها",
-                        callback_data="requests"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "💰 شارژ",
-                        callback_data="add_balance"
-                    )
-                ]
-            ]
-
-
             await q.message.reply_text(
-                "👑 پنل مدیریت",
-                reply_markup=InlineKeyboardMarkup(kb)
+                "👑 پنل مدیریت"
             )
 
         else:
@@ -189,21 +200,27 @@ UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
 
 
 
+
+
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     step = context.user_data.get("step")
+
 
     if not step:
         return
 
 
+
     uid = update.effective_user.id
 
-    msg = update.message.text
+    text = update.message.text
+
 
 
 
     if step == "deposit":
+
 
         cur.execute(
 """
@@ -215,12 +232,13 @@ VALUES(?,?,?,?,?)
 uid,
 "deposit",
 0,
-msg,
+text,
 "pending"
 )
         )
 
         db.commit()
+
 
 
         await context.bot.send_message(
@@ -231,8 +249,13 @@ f"""
 👤 ID:
 {uid}
 
-📝:
-{msg}
+
+📝 رسید:
+
+{text}
+
+
+⏳ در انتظار تایید
 """
         )
 
@@ -245,11 +268,14 @@ f"""
 
     elif step == "withdraw_amount":
 
+
         try:
 
-            amount = int(msg)
+            amount = int(text)
+
 
         except:
+
 
             await update.message.reply_text(
                 "❌ فقط عدد بفرست"
@@ -258,20 +284,25 @@ f"""
             return
 
 
+
         context.user_data["amount"] = amount
 
         context.user_data["step"] = "withdraw_id"
 
 
+
         await update.message.reply_text(
-            "👤 آیدی مقصد را بفرست (مثال: username@)"
+            "👤 آیدی مقصد را بفرست\nمثال: username@"
         )
+
 
 
 
     elif step == "withdraw_id":
 
+
         amount = context.user_data["amount"]
+
 
 
         cur.execute(
@@ -284,12 +315,14 @@ VALUES(?,?,?,?,?)
 uid,
 "withdraw",
 amount,
-msg,
+text,
 "pending"
 )
         )
 
+
         db.commit()
+
 
 
         await context.bot.send_message(
@@ -300,13 +333,16 @@ f"""
 👤 ID:
 {uid}
 
+
 💰 مقدار:
 {amount} DOGS
 
+
 📌 مقصد:
-{msg}
+{text}
 """
         )
+
 
 
         await update.message.reply_text(
@@ -317,14 +353,10 @@ f"""
 
     context.user_data.clear()
 
-    # =========================
-# ADMIN REQUESTS
-# =========================
-
-
 async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
+
     await q.answer()
 
 
@@ -339,11 +371,11 @@ async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "SELECT COUNT(*) FROM users"
         )
 
-        users = cur.fetchone()[0]
+        count = cur.fetchone()[0]
 
 
         await q.message.reply_text(
-            f"📊 تعداد کاربران: {users}"
+            f"📊 تعداد کاربران: {count}"
         )
 
 
@@ -359,6 +391,7 @@ WHERE status='pending'
 """
         )
 
+
         rows = cur.fetchall()
 
 
@@ -366,7 +399,7 @@ WHERE status='pending'
         if not rows:
 
             await q.message.reply_text(
-                "📭 درخواست در انتظار نیست"
+                "📭 درخواستی وجود ندارد"
             )
 
             return
@@ -375,10 +408,11 @@ WHERE status='pending'
 
         for row in rows:
 
+
             rid, uid, typ, amount, info = row
 
 
-            kb = [
+            keyboard = [
 
                 [
                     InlineKeyboardButton(
@@ -399,7 +433,7 @@ WHERE status='pending'
 
             await q.message.reply_text(
 f"""
-📋 درخواست جدید
+📋 درخواست
 
 👤 کاربر:
 {uid}
@@ -413,44 +447,24 @@ f"""
 📝 اطلاعات:
 {info}
 """,
-reply_markup=InlineKeyboardMarkup(kb)
+reply_markup=InlineKeyboardMarkup(keyboard)
             )
 
 
 
-    elif q.data == "add_balance":
-
-        context.user_data["admin_step"] = "add"
-
-        await q.message.reply_text(
-"""
-💰 شارژ کاربر
-
-فرمت:
-
-ID مقدار
-
-مثال:
-
-123456 5000
-"""
-        )
 
 
-
-# =========================
-# تایید / رد
-# =========================
-
-
-async def confirm_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def confirm_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
+
     await q.answer()
+
 
 
     if q.from_user.id != OWNER_ID:
         return
+
 
 
     action, rid = q.data.split("_")
@@ -472,6 +486,7 @@ WHERE id=?
     row = cur.fetchone()
 
 
+
     if not row:
         return
 
@@ -486,11 +501,11 @@ WHERE id=?
 
         if typ == "deposit":
 
-            # مقدار واریزی فعلا دستی است
             change_balance(
                 uid,
                 amount
             )
+
 
 
         elif typ == "withdraw":
@@ -512,10 +527,12 @@ WHERE id=?
         )
 
 
+
         await context.bot.send_message(
             uid,
             "✅ درخواست شما تایید شد"
         )
+
 
 
         await q.edit_message_text(
@@ -543,77 +560,21 @@ WHERE id=?
         )
 
 
+
         await q.edit_message_text(
             "❌ رد شد"
         )
 
 
+
     db.commit()
-
-    # =========================
-# ADMIN TEXT
 # =========================
-
-
-async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.effective_user.id != OWNER_ID:
-        return
-
-
-    step = context.user_data.get("admin_step")
-
-
-    if step != "add":
-        return
-
-
-    try:
-
-        uid, amount = update.message.text.split()
-
-        uid = int(uid)
-
-        amount = int(amount)
-
-
-    except:
-
-        await update.message.reply_text(
-            "❌ فرمت اشتباه\nمثال:\n123456 5000"
-        )
-
-        return
-
-
-
-    change_balance(
-        uid,
-        amount
-    )
-
-
-    await update.message.reply_text(
-        "✅ موجودی اضافه شد"
-    )
-
-
-    await context.bot.send_message(
-        uid,
-        f"💰 {amount} DOGS به موجودی شما اضافه شد"
-    )
-
-
-    context.user_data.clear()
-
-
-
-# =========================
-# START BOT
+# RUN BOT
 # =========================
 
 
 app = Application.builder().token(TOKEN).build()
+
 
 
 # شروع
@@ -625,7 +586,8 @@ app.add_handler(
 )
 
 
-# همه دکمه‌ها
+
+# دکمه‌های اصلی
 app.add_handler(
     CallbackQueryHandler(
         buttons
@@ -633,21 +595,25 @@ app.add_handler(
 )
 
 
-# دکمه‌های مدیریت
+
+# تایید و رد مالک
 app.add_handler(
     CallbackQueryHandler(
-        admin_buttons
-    )
-)
-
-
-# تایید و رد
-app.add_handler(
-    CallbackQueryHandler(
-        confirm_buttons,
+        confirm_request,
         pattern="^(ok|no)_"
     )
 )
+
+
+
+# پنل مدیریت
+app.add_handler(
+    CallbackQueryHandler(
+        admin_buttons,
+        pattern="^(stats|requests)$"
+    )
+)
+
 
 
 # پیام‌های کاربر
@@ -659,17 +625,8 @@ app.add_handler(
 )
 
 
-# پیام‌های مدیر
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        admin_text
-    )
-)
-
 
 print("🚀 DOGS LIMBO BOT RUNNING")
 
 
 app.run_polling()
-    )
