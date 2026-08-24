@@ -1,5 +1,17 @@
+# ==============================
+# DOGS LIMBO BOT
+# Virtual DOGS
+# ==============================
+
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import random
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -9,20 +21,48 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = "TOKEN_BOT"
 
-OWNER_ID = 8552447077  # آیدی عددی مالک
+# ==============================
+# تنظیمات
+# ==============================
+
+TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
+
+OWNER_ID = 8552447077
+
+BOT_STATUS = True
 
 
-db = sqlite3.connect("users.db", check_same_thread=False)
+
+# ==============================
+# دیتابیس
+# ==============================
+
+db = sqlite3.connect(
+    "dogs_limbo.db",
+    check_same_thread=False
+)
+
 cur = db.cursor()
+
+
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS users(
 id INTEGER PRIMARY KEY,
-balance INTEGER DEFAULT 0
+balance INTEGER DEFAULT 10000
 )
 """)
+
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS history(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+user_id INTEGER,
+text TEXT
+)
+""")
+
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS deposits(
@@ -34,274 +74,599 @@ status TEXT
 )
 """)
 
+
 db.commit()
 
 
-async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
-    uid = update.effective_user.id
+# ==============================
+# توابع کاربر
+# ==============================
+
+def add_user(uid):
 
     cur.execute(
-        "INSERT OR IGNORE INTO users(id) VALUES(?)",
+        """
+        INSERT OR IGNORE INTO users(id)
+        VALUES(?)
+        """,
         (uid,)
     )
 
     db.commit()
 
-    await update.message.reply_text(
-        "سلام 👋\n"
-        "برای واریز رسید خود را ارسال کنید."
-    )
 
 
+def balance(uid):
 
-async def photo(update:Update, context:ContextTypes.DEFAULT_TYPE):
-
-    uid = update.effective_user.id
-
-    if uid == OWNER_ID:
-        return
-
-
-    amount = context.user_data.get("amount")
-
-    if not amount:
-        await update.message.reply_text(
-            "اول مقدار DOGS را ارسال کن.\nمثال:\n5000"
-        )
-        return
-
-
-    file_id = update.message.photo[-1].file_id
-
+    add_user(uid)
 
     cur.execute(
         """
-        INSERT INTO deposits
-        (user_id,amount,photo,status)
-        VALUES(?,?,?,?)
+        SELECT balance
+        FROM users
+        WHERE id=?
         """,
-        (
-            uid,
-            amount,
-            file_id,
-            "pending"
-        )
+        (uid,)
     )
 
-    deposit_id = cur.lastrowid
+    return cur.fetchone()[0]
+
+
+
+def change_balance(uid,amount):
+
+    add_user(uid)
+
+    cur.execute(
+        """
+        UPDATE users
+        SET balance = balance + ?
+        WHERE id=?
+        """,
+        (
+            amount,
+            uid
+        )
+    )
 
     db.commit()
 
 
-    keyboard = [
-        [
-        InlineKeyboardButton(
-            "✅ تایید",
-            callback_data=f"ok_{deposit_id}"
-        ),
 
-        InlineKeyboardButton(
-            "❌ رد",
-            callback_data=f"no_{deposit_id}"
-        )
-        ]
-    ]
-
-
-    await context.bot.send_photo(
-        chat_id=OWNER_ID,
-        photo=file_id,
-        caption=
-        f"""
-🔔 درخواست واریز
-
-👤 کاربر:
-{uid}
-
-💰 مقدار:
-{amount} DOGS
-
-شماره:
-{deposit_id}
-        """,
-        reply_markup=
-        InlineKeyboardMarkup(keyboard)
-    )
-
-
-    await update.message.reply_text(
-        "✅ رسید ارسال شد، منتظر تایید مالک باشید."
-    )
-
-
-
-async def button(update:Update, context:ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-
-    if query.from_user.id != OWNER_ID:
-        return
-
-
-    data=query.data
-
-
-    action, dep_id = data.split("_")
-
-    dep_id=int(dep_id)
-
+def save_history(uid,text):
 
     cur.execute(
         """
-        SELECT user_id,amount,status
-        FROM deposits
-        WHERE id=?
-        """,
-        (dep_id,)
-    )
-
-    dep=cur.fetchone()
-
-
-    if not dep:
-        return
-
-
-    user_id,amount,status=dep
-
-
-    if status!="pending":
-        await query.answer(
-            "قبلا بررسی شده"
-        )
-        return
-
-
-
-    if action=="ok":
-
-
-        cur.execute(
-        """
-        UPDATE users
-        SET balance=balance+?
-        WHERE id=?
+        INSERT INTO history(user_id,text)
+        VALUES(?,?)
         """,
         (
-            amount,
-            user_id
-        ))
+            uid,
+            text
+        )
+    )
+
+    db.commit()
 
 
-        cur.execute(
-        """
-        UPDATE deposits
-        SET status='approved'
-        WHERE id=?
-        """,
-        (dep_id,)
+
+# ==============================
+# شروع
+# ==============================
+
+async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
+
+    uid = update.effective_user.id
+
+    add_user(uid)
+
+    await update.message.reply_text(
+f"""
+🚀 DOGS LIMBO
+
+💰 موجودی:
+{balance(uid)} DOGS
+
+
+🎮 بازی:
+مبلغ و ضریب را بفرست
+
+مثال:
+
+100 2.5
+"""
+    )
+
+# ==============================
+# بازی LIMBO 🚀
+# ==============================
+
+async def limbo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    global BOT_STATUS
+
+
+    if not BOT_STATUS:
+
+        await update.message.reply_text(
+            "🔴 ربات خاموش است"
+        )
+        return
+
+
+    uid = update.effective_user.id
+
+    add_user(uid)
+
+
+    try:
+
+        text = update.message.text.split()
+
+        bet = int(text[0])
+
+        target = float(text[1])
+
+
+    except:
+
+        await update.message.reply_text(
+"""
+❌ فرمت اشتباه
+
+مثال:
+
+100 2.5
+
+100 = شرط DOGS
+2.5 = ضریب هدف
+"""
+        )
+
+        return
+
+
+
+    if bet <= 0:
+
+        await update.message.reply_text(
+            "❌ مبلغ اشتباه است"
+        )
+
+        return
+
+
+
+    if bet > balance(uid):
+
+        await update.message.reply_text(
+            "❌ DOGS کافی نداری"
+        )
+
+        return
+
+
+
+    if target < 1.10:
+
+        await update.message.reply_text(
+            "❌ ضریب باید حداقل 1.10 باشد"
+        )
+
+        return
+
+
+
+    # کم کردن شرط
+
+    change_balance(
+        uid,
+        -bet
+    )
+
+
+
+    # ضریب انفجار
+
+    crash = round(
+        random.uniform(1.00,10.00),
+        2
+    )
+
+
+
+    if target <= crash:
+
+
+        win = int(
+            bet * target
         )
 
 
-        await context.bot.send_message(
-            user_id,
-            f"✅ واریز تایید شد\n+{amount} DOGS"
+        change_balance(
+            uid,
+            win
         )
 
 
-        await query.edit_message_caption(
-            "✅ تایید شد"
-        )
+        result = f"""
+🚀 LIMBO
+
+✅ بردی
+
+🎯 ضریب:
+x{target}
+
+💰 شرط:
+{bet} DOGS
+
+🏆 جایزه:
++{win} DOGS
+"""
 
 
 
     else:
 
 
-        cur.execute(
-        """
-        UPDATE deposits
-        SET status='rejected'
-        WHERE id=?
-        """,
-        (dep_id,)
-        )
+        result = f"""
+🚀 LIMBO
 
+💥 باختی
 
-        await context.bot.send_message(
-            user_id,
-            "❌ واریز رد شد"
-        )
+🎯 ضریب انتخابی:
+x{target}
 
+💣 انفجار:
+x{crash}
 
-        await query.edit_message_caption(
-            "❌ رد شد"
-        )
-
-
-    db.commit()
+❌ باخت:
+{bet} DOGS
+"""
 
 
 
-app=Application.builder().token(TOKEN).build()
-
-
-app.add_handler(
-CommandHandler("start",start)
-)
-
-
-app.add_handler(
-MessageHandler(
-filters.PHOTO,
-photo
-)
-)
-
-
-app.add_handler(
-CallbackQueryHandler(button)
-)
-
-
-print("BOT RUNNING")
-
-app.run_polling()
-
-# دریافت مقدار واریز از کاربر
-
-async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
-
-    text = update.message.text
-
-
-    if not text.isdigit():
-        return
-
-
-    amount = int(text)
-
-
-    context.user_data["deposit_amount"] = amount
+    save_history(
+        uid,
+        result
+    )
 
 
     await update.message.reply_text(
-        "✅ مبلغ ثبت شد\n\n"
-        "حالا عکس رسید واریز DOGS را ارسال کن 📸"
+        result
+    )
+
+# ==============================
+# پنل مدیریت 👑
+# ==============================
+
+
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != OWNER_ID:
+
+        await update.message.reply_text(
+            "❌ دسترسی ندارید"
+        )
+
+        return
+
+
+
+    keyboard = [
+
+        [
+            InlineKeyboardButton(
+                "💰 شارژ DOGS",
+                callback_data="add"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "➖ کسر DOGS",
+                callback_data="remove"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "📊 آمار",
+                callback_data="stats"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🟢/🔴 روشن خاموش",
+                callback_data="toggle"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🔄 انتقال مالکیت",
+                callback_data="owner"
+            )
+        ]
+
+    ]
+
+
+    await update.message.reply_text(
+
+        "👑 پنل مدیریت DOGS LIMBO",
+
+        reply_markup=
+        InlineKeyboardMarkup(keyboard)
+
     )
 
 
 
 
 
-# دریافت عکس رسید
+async def admin_buttons(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
-async def get_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global BOT_STATUS
+    global OWNER_ID
 
-    user_id = update.effective_user.id
+
+    query = update.callback_query
+
+
+    if query.from_user.id != OWNER_ID:
+
+        return
+
+
+
+    data = query.data
+
+
+
+    if data=="stats":
+
+
+        cur.execute(
+            "SELECT COUNT(*) FROM users"
+        )
+
+        count = cur.fetchone()[0]
+
+
+        await query.message.reply_text(
+            f"📊 کاربران: {count}"
+        )
+
+
+
+
+
+    elif data=="toggle":
+
+
+        BOT_STATUS = not BOT_STATUS
+
+
+        status = (
+            "🟢 روشن"
+            if BOT_STATUS
+            else
+            "🔴 خاموش"
+        )
+
+
+        await query.message.reply_text(
+            "وضعیت ربات: "+status
+        )
+
+
+
+
+
+    elif data=="add":
+
+
+        context.user_data["admin_mode"]="add"
+
+
+        await query.message.reply_text(
+"""
+💰 شارژ DOGS
+
+فرمت:
+
+آیدی مقدار
+
+مثال:
+
+123456 5000
+"""
+        )
+
+
+
+
+
+    elif data=="remove":
+
+
+        context.user_data["admin_mode"]="remove"
+
+
+        await query.message.reply_text(
+"""
+➖ کسر DOGS
+
+فرمت:
+
+آیدی مقدار
+
+مثال:
+
+123456 1000
+"""
+        )
+
+
+
+
+
+    elif data=="owner":
+
+
+        context.user_data["admin_mode"]="owner"
+
+
+        await query.message.reply_text(
+            "🔄 آیدی مالک جدید را بفرست"
+        )
+
+
+
+
+
+
+async def admin_text(update:Update, context:ContextTypes.DEFAULT_TYPE):
+
+    global OWNER_ID
+
+
+    if update.effective_user.id != OWNER_ID:
+
+        return
+
+
+
+    mode = context.user_data.get(
+        "admin_mode"
+    )
+
+
+    if not mode:
+
+        return
+
+
+
+    data = update.message.text.split()
+
+
+
+    if mode=="add":
+
+
+        uid = int(data[0])
+
+        amount = int(data[1])
+
+
+        change_balance(
+            uid,
+            amount
+        )
+
+
+        await update.message.reply_text(
+            "✅ DOGS اضافه شد"
+        )
+
+
+
+
+    elif mode=="remove":
+
+
+        uid = int(data[0])
+
+        amount = int(data[1])
+
+
+        change_balance(
+            uid,
+            -amount
+        )
+
+
+        await update.message.reply_text(
+            "✅ DOGS کم شد"
+        )
+
+
+
+
+    elif mode=="owner":
+
+
+        OWNER_ID = int(data[0])
+
+
+        await update.message.reply_text(
+            "✅ مالک تغییر کرد"
+        )
+
+
+
+    context.user_data.clear()
+
+# ==============================
+# واریز مجازی DOGS 📸
+# ==============================
+
+
+async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    context.user_data["deposit"] = True
+
+
+    await update.message.reply_text(
+"""
+💳 درخواست واریز DOGS
+
+مقدار DOGS را بفرست:
+
+مثال:
+5000
+"""
+    )
+
+
+
+
+
+async def deposit_amount(update:Update, context:ContextTypes.DEFAULT_TYPE):
+
+
+    if not context.user_data.get("deposit"):
+
+        return
+
+
+
+    try:
+
+        amount = int(update.message.text)
+
+    except:
+
+        return
+
+
+
+    context.user_data["deposit_amount"] = amount
+
+
+    await update.message.reply_text(
+        "📸 حالا عکس رسید را ارسال کن"
+    )
+
+
+
+
+
+async def deposit_photo(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
 
     amount = context.user_data.get(
@@ -311,34 +676,56 @@ async def get_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not amount:
 
-        await update.message.reply_text(
-            "اول مقدار DOGS را بفرست."
-        )
-
         return
 
 
 
-    photo = update.message.photo[-1]
+    uid = update.effective_user.id
 
 
-    file_id = photo.file_id
+    photo = update.message.photo[-1].file_id
+
+
+
+    cur.execute(
+"""
+INSERT INTO deposits
+(user_id,amount,photo,status)
+
+VALUES(?,?,?,?)
+""",
+(
+uid,
+amount,
+photo,
+"pending"
+)
+)
+
+
+    dep_id = cur.lastrowid
+
+
+    db.commit()
 
 
 
     keyboard = [
+
         [
             InlineKeyboardButton(
                 "✅ تایید",
-                callback_data=f"approve_{user_id}_{amount}"
+                callback_data=f"approve_{dep_id}"
             )
         ],
+
         [
             InlineKeyboardButton(
                 "❌ رد",
-                callback_data=f"reject_{user_id}"
+                callback_data=f"reject_{dep_id}"
             )
         ]
+
     ]
 
 
@@ -347,18 +734,20 @@ async def get_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         chat_id=OWNER_ID,
 
-        photo=file_id,
+        photo=photo,
 
-        caption=
-        f"""
-🔔 درخواست واریز جدید
+        caption=f"""
+🔔 درخواست واریز DOGS
 
 👤 کاربر:
-{user_id}
+{uid}
 
 💰 مقدار:
 {amount} DOGS
-        """,
+
+شماره:
+{dep_id}
+""",
 
         reply_markup=
         InlineKeyboardMarkup(keyboard)
@@ -368,64 +757,95 @@ async def get_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     await update.message.reply_text(
-        "✅ رسید برای مالک ارسال شد."
+        "✅ رسید برای مالک ارسال شد"
     )
 
 
+    context.user_data.clear()
 
 
 
-# دکمه های مالک
 
-async def owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def deposit_buttons(update:Update, context:ContextTypes.DEFAULT_TYPE):
+
 
     query = update.callback_query
 
 
     if query.from_user.id != OWNER_ID:
+
         return
 
 
 
-    data = query.data.split("_")
+    action, dep_id = query.data.split("_")
+
+
+    dep_id = int(dep_id)
 
 
 
-    if data[0]=="approve":
+    cur.execute(
+"""
+SELECT user_id,amount,status
+FROM deposits
+WHERE id=?
+""",
+(dep_id,)
+)
 
-        user_id = int(data[1])
 
-        amount = int(data[2])
-
+    data = cur.fetchone()
 
 
-        cur.execute(
-        """
-        INSERT OR IGNORE INTO users(id)
-        VALUES(?)
-        """,
-        (user_id,)
+
+    if not data:
+
+        return
+
+
+
+    uid, amount, status = data
+
+
+
+    if status != "pending":
+
+        return
+
+
+
+
+
+    if action=="approve":
+
+
+        change_balance(
+            uid,
+            amount
         )
 
 
-
         cur.execute(
-        """
-        UPDATE users
-        SET balance = balance + ?
-        WHERE id=?
-        """,
-        (amount,user_id)
-        )
-
-
-        db.commit()
-
+"""
+UPDATE deposits
+SET status='approved'
+WHERE id=?
+""",
+(dep_id,)
+)
 
 
         await context.bot.send_message(
-            user_id,
-            f"✅ واریز تایید شد\n+{amount} DOGS"
+
+            uid,
+
+            f"""
+✅ واریز تایید شد
+
++{amount} DOGS
+"""
         )
 
 
@@ -435,26 +855,56 @@ async def owner_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    elif data[0]=="reject":
 
 
-        user_id=int(data[1])
+    else:
+
+
+        cur.execute(
+"""
+UPDATE deposits
+SET status='rejected'
+WHERE id=?
+""",
+(dep_id,)
+)
 
 
         await context.bot.send_message(
-            user_id,
+            uid,
             "❌ واریز رد شد"
         )
 
 
         await query.edit_message_caption(
             "❌ رد شد"
-    )
+        )
+
+
+
+    db.commit()
+
+
+
+
+
+# ==============================
+# هندلرها
+# ==============================
+
 
 app.add_handler(
-MessageHandler(
-filters.TEXT & ~filters.COMMAND,
-get_amount
+CommandHandler(
+"admin",
+admin
+)
+)
+
+
+app.add_handler(
+CommandHandler(
+"deposit",
+deposit
 )
 )
 
@@ -462,47 +912,36 @@ get_amount
 app.add_handler(
 MessageHandler(
 filters.PHOTO,
-get_receipt
+deposit_photo
 )
 )
 
 
 app.add_handler(
 CallbackQueryHandler(
-owner_buttons
+deposit_buttons
 )
-)# اجرای ربات
-
-app = Application.builder().token(TOKEN).build()
-
-
-app.add_handler(
-    CommandHandler("start", start)
 )
 
 
 app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        get_amount
-    )
+CallbackQueryHandler(
+admin_buttons
+)
 )
 
 
 app.add_handler(
-    MessageHandler(
-        filters.PHOTO,
-        get_receipt
-    )
+MessageHandler(
+filters.TEXT & ~filters.COMMAND,
+admin_text
+)
 )
 
 
 app.add_handler(
-    CallbackQueryHandler(owner_buttons)
+MessageHandler(
+filters.TEXT & ~filters.COMMAND,
+limbo
 )
-
-
-print("BOT IS RUNNING")
-
-
-app.run_polling()
+)
