@@ -27,7 +27,7 @@ from telegram.ext import (
 # SETTINGS
 # =========================================================
 
-TOKEN = os.getenv("BOT_TOKEN", "")
+TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 
 OWNER_ID = 8552447077
