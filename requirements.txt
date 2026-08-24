@@ -1,2 +1,2 @@
-python-telegram-bot==22.3
-aiohttp
+python-telegram-bot>=20,<23
+Flask>=3,<4
