@@ -11,8 +11,8 @@ from telegram.ext import (
 import sqlite3
 
 
-TOKEN = "PUT_TOKEN_HERE"
-OWNER_ID = 123456789
+TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
+OWNER_ID = 8552447077
 
 
 
