@@ -2,50 +2,196 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>DOGS LIMBO</title>
+
+<style>
+body{
+background:#07111f;
+color:white;
+font-family:tahoma;
+text-align:center;
+}
+
+.box{
+margin:40px auto;
+max-width:400px;
+}
+
+input,button{
+width:90%;
+padding:12px;
+margin:8px;
+font-size:18px;
+border-radius:10px;
+border:0;
+}
+
+button{
+background:#00bfff;
+}
+
+.game{
+height:250px;
+background:#02050b;
+border-radius:20px;
+overflow:hidden;
+position:relative;
+}
+
+#rocket{
+position:absolute;
+bottom:20px;
+right:20px;
+font-size:55px;
+transition:2s;
+}
+
+#result{
+font-size:22px;
+margin:20px;
+}
+
+</style>
+
 </head>
-<body style="background:#07111f;color:white;text-align:center;font-family:tahoma">
+
+<body>
+
+<div class="box">
 
 <h1>🚀 DOGS LIMBO</h1>
 
-<h3>موجودی: <span id="bal">...</span> DOGS</h3>
+<h2>
+💰 موجودی:
+<span id="balance">...</span>
+DOGS
+</h2>
+
+
+<div class="game">
+<div id="rocket">🚀</div>
+</div>
+
 
 <input id="bet" placeholder="تعداد DOGS">
-<br><br>
+
 <input id="target" placeholder="ضریب مثال 2.5">
-<br><br>
 
-<button onclick="play()">شروع 🚀</button>
 
-<p id="msg"></p>
+<button onclick="play()">
+🚀 شروع
+</button>
+
+
+<div id="result"></div>
+
+
+</div>
+
+
 
 <script>
+
 let id="1";
 
-async function load(){
- let r=await fetch("/balance/"+id);
- let d=await r.json();
- document.getElementById("bal").innerHTML=d.balance;
+
+async function loadBalance(){
+
+let r = await fetch("/balance/"+id);
+
+let d = await r.json();
+
+document.getElementById("balance").innerHTML=d.balance;
+
 }
-load();
+
+
+loadBalance();
+
+
 
 async function play(){
- let bet=document.getElementById("bet").value;
- let target=document.getElementById("target").value;
 
- let r=await fetch("/limbo",{
-  method:"POST",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({id,bet,target})
- });
 
- let d=await r.json();
- document.getElementById("msg").innerHTML=
- d.win ? "✅ بردی +" + d.amount :
- "💥 باختی";
+let bet=document.getElementById("bet").value;
 
- load();
+let target=document.getElementById("target").value;
+
+
+
+let rocket=document.getElementById("rocket");
+
+
+rocket.style.bottom="180px";
+
+rocket.style.right="250px";
+
+
+
+let r=await fetch("/limbo",{
+
+method:"POST",
+
+headers:{
+"Content-Type":"application/json"
+},
+
+body:JSON.stringify({
+
+id:id,
+
+bet:bet,
+
+target:target
+
+})
+
+});
+
+
+
+let d=await r.json();
+
+
+
+setTimeout(()=>{
+
+
+if(d.win){
+
+document.getElementById("result").innerHTML=
+"✅ بردی +"+d.prize+" DOGS 🚀";
+
+
 }
+
+else{
+
+document.getElementById("result").innerHTML=
+"💥 باختی";
+
+
+}
+
+
+
+rocket.style.bottom="20px";
+
+rocket.style.right="20px";
+
+
+loadBalance();
+
+
+},2000);
+
+
+
+}
+
+
 </script>
 
 </body>
