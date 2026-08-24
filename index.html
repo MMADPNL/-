@@ -1,71 +1,114 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
+
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>DOGS LIMBO 🚀</title>
+<title>DOGS LIMBO</title>
 
 <style>
+
 body{
-    background:#07111f;
-    color:white;
-    font-family:tahoma;
-    text-align:center;
+background:#07111f;
+color:white;
+font-family:tahoma;
+text-align:center;
 }
 
 .box{
-    margin:30px auto;
-    max-width:420px;
+max-width:450px;
+margin:auto;
+padding:20px;
 }
 
 h1{
-    font-size:40px;
+font-size:40px;
 }
 
-input,button{
-    width:90%;
-    padding:14px;
-    margin:8px;
-    border-radius:12px;
-    border:0;
-    font-size:18px;
+#balance{
+color:#00ff99;
 }
 
-button{
-    background:#00bfff;
-    color:white;
-}
 
 .game{
-    height:250px;
-    background:#02050b;
-    border-radius:20px;
-    position:relative;
-    overflow:hidden;
+
+height:350px;
+background:#02050b;
+border-radius:20px;
+position:relative;
+overflow:hidden;
+
 }
+
 
 #rocket{
-    position:absolute;
-    bottom:20px;
-    right:20px;
-    font-size:60px;
-    transition:2s;
+
+position:absolute;
+bottom:40px;
+right:40px;
+font-size:65px;
+transition:0.2s;
+
 }
 
-#result{
-    margin-top:20px;
-    font-size:22px;
+
+#multi{
+
+position:absolute;
+bottom:10px;
+left:50%;
+transform:translateX(-50%);
+
+font-size:35px;
+color:#00ff99;
+
 }
+
+
+
+input,button{
+
+width:90%;
+padding:14px;
+margin:8px;
+border-radius:12px;
+border:0;
+font-size:18px;
+
+}
+
+
+button{
+
+background:#0099ff;
+color:white;
+
+}
+
+
+#result{
+
+font-size:25px;
+margin-top:20px;
+
+}
+
+
 </style>
 
 </head>
 
+
 <body>
+
 
 <div class="box">
 
+
 <h1>🚀 DOGS LIMBO</h1>
+
 
 <h2>
 💰 موجودی:
@@ -74,14 +117,34 @@ DOGS
 </h2>
 
 
+
 <div class="game">
-<div id="rocket">🚀</div>
+
+<div id="rocket">
+🚀
 </div>
 
 
-<input id="bet" type="number" placeholder="تعداد DOGS">
+<div id="multi">
+x1.00
+</div>
 
-<input id="target" type="number" step="0.01" placeholder="ضریب مثال 2.5">
+
+</div>
+
+
+
+<input id="bet"
+type="number"
+placeholder="تعداد DOGS">
+
+
+
+<input id="target"
+type="number"
+step="0.01"
+placeholder="ضریب مثال 2.5">
+
 
 
 <button onclick="startGame()">
@@ -89,32 +152,41 @@ DOGS
 </button>
 
 
+
 <div id="result"></div>
+
 
 
 </div>
 
 
+
 <script>
 
-let userId = "1";
+
+let userId="1";
 
 
-async function getBalance(){
+
+async function loadBalance(){
 
 try{
 
-let res = await fetch("/balance/"+userId);
 
-let data = await res.json();
+let res=await fetch("/balance/"+userId);
 
-document.getElementById("balance").innerHTML =
+let data=await res.json();
+
+
+document.getElementById("balance").innerHTML=
 data.balance;
+
 
 
 }catch(e){
 
-document.getElementById("balance").innerHTML="خطا";
+document.getElementById("balance").innerHTML=
+"خطا";
 
 }
 
@@ -125,18 +197,18 @@ document.getElementById("balance").innerHTML="خطا";
 async function startGame(){
 
 
-let bet =
+let bet=
 Number(document.getElementById("bet").value);
 
 
-let target =
+let target=
 Number(document.getElementById("target").value);
 
 
 
 if(!bet || !target){
 
-alert("مقدار و ضریب را وارد کن");
+alert("تعداد و ضریب را وارد کن");
 
 return;
 
@@ -144,20 +216,45 @@ return;
 
 
 
-let rocket =
+let rocket=
 document.getElementById("rocket");
 
 
-rocket.style.right="250px";
-
-rocket.style.bottom="180px";
-
+let multi=
+document.getElementById("multi");
 
 
-try{
+let result=
+document.getElementById("result");
 
 
-let res = await fetch("/limbo",{
+
+let x=1;
+
+
+let move=setInterval(()=>{
+
+
+x+=0.05;
+
+
+multi.innerHTML=
+"x"+x.toFixed(2);
+
+
+
+rocket.style.bottom=
+(40+x*15)+"px";
+
+
+
+},100);
+
+
+
+
+
+let res=await fetch("/limbo",{
 
 method:"POST",
 
@@ -166,6 +263,7 @@ headers:{
 "Content-Type":"application/json"
 
 },
+
 
 body:JSON.stringify({
 
@@ -177,56 +275,65 @@ target:target
 
 })
 
+
 });
 
 
 
-let data = await res.json();
+let data=await res.json();
+
+
+
+clearInterval(move);
 
 
 
 if(data.win){
 
-document.getElementById("result").innerHTML =
+
+result.innerHTML=
 "✅ بردی +"+data.prize+" DOGS 🚀";
 
-}else{
 
-document.getElementById("result").innerHTML =
+multi.innerHTML=
+"🚀 x"+target;
+
+
+}
+
+else{
+
+
+result.innerHTML=
 "💥 باختی";
 
-}
 
-
-
-}catch(e){
-
-document.getElementById("result").innerHTML =
-"❌ سرور وصل نیست";
-
-}
-
-
-
-setTimeout(()=>{
-
-rocket.style.right="20px";
-rocket.style.bottom="20px";
-
-},2000);
-
-
-
-getBalance();
+multi.innerHTML=
+"💣 انفجار";
 
 
 }
 
 
-getBalance();
+
+rocket.style.bottom="40px";
+
+
+loadBalance();
+
+
+
+}
+
+
+
+
+loadBalance();
 
 
 </script>
 
+
 </body>
+
 </html>
