@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
+
 <head>
+
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
 <title>DOGS LIMBO 🚀</title>
 
 <style>
@@ -14,13 +18,13 @@ text-align:center;
 }
 
 .box{
-width:400px;
+max-width:450px;
 margin:auto;
 padding:20px;
 }
 
 .game{
-height:300px;
+height:350px;
 background:#02050b;
 border-radius:20px;
 position:relative;
@@ -28,42 +32,59 @@ overflow:hidden;
 }
 
 #rocket{
+
 position:absolute;
 bottom:20px;
 right:20px;
-font-size:60px;
-transition:.2s;
+font-size:70px;
+
 }
+
 
 #multi{
-font-size:40px;
+
+font-size:45px;
 color:#00ff99;
-margin:15px;
+margin:20px;
+
 }
 
-input,button{
+
+input{
 
 width:90%;
 padding:15px;
-margin:8px;
-border-radius:12px;
+margin:10px;
+font-size:20px;
+border-radius:10px;
 border:0;
-font-size:18px;
 
 }
+
 
 button{
-background:#00aaff;
+
+width:90%;
+padding:15px;
+font-size:22px;
+background:#008cff;
 color:white;
+border:0;
+border-radius:12px;
+
 }
+
 
 </style>
 
 </head>
 
+
 <body>
 
+
 <div class="box">
+
 
 <h1>🚀 DOGS LIMBO</h1>
 
@@ -77,6 +98,7 @@ DOGS
 </h2>
 
 
+
 <div class="game">
 
 <div id="rocket">
@@ -86,19 +108,24 @@ DOGS
 </div>
 
 
+
 <div id="multi">
 x1.00
 </div>
 
 
-<input id="bet" placeholder="تعداد DOGS">
+
+<input id="bet"
+placeholder="تعداد DOGS مثلا 100">
 
 
-<input id="target" placeholder="ضریب مثال 2.5">
+<input id="target"
+placeholder="ضریب مثلا 2.5">
 
 
-<button onclick="start()">
-شروع 🚀
+
+<button onclick="startGame()">
+🚀 شروع
 </button>
 
 
@@ -109,45 +136,78 @@ x1.00
 
 
 
+
+
 <script>
 
 
 let playing=false;
 
 
-function start(){
+
+function faToEn(str){
+
+return String(str).replace(/[۰-۹]/g,function(d){
+
+return "۰۱۲۳۴۵۶۷۸۹".indexOf(d);
+
+});
+
+}
 
 
-if(playing)return;
 
 
-let bet =
-Number(document.getElementById("bet").value);
-
-
-let target =
-Number(document.getElementById("target").value);
+function startGame(){
 
 
 
-if(!bet || !target){
-
-alert("مقدار و ضریب را وارد کن");
+if(playing){
 
 return;
 
 }
 
 
+
+let betInput =
+document.getElementById("bet").value;
+
+
+let targetInput =
+document.getElementById("target").value;
+
+
+
+let bet =
+Number(faToEn(betInput));
+
+
+let target =
+Number(faToEn(targetInput));
+
+
+
+if(
+isNaN(bet)
+||
+isNaN(target)
+||
+bet<=0
+||
+target<=1
+){
+
+alert("مقدار و ضریب درست وارد کن");
+
+return;
+
+}
+
+
+
 playing=true;
 
-
-let crash =
-(Number(Math.random()*8)+1).toFixed(2);
-
-
-
-let x=1;
 
 
 let rocket =
@@ -158,19 +218,36 @@ let multi =
 document.getElementById("multi");
 
 
+let result =
+document.getElementById("result");
 
-let timer=setInterval(()=>{
+
+
+let x=1;
+
+
+
+let crash =
+Number((Math.random()*5+1).toFixed(2));
+
+
+
+let timer=setInterval(function(){
+
 
 
 x+=0.05;
+
 
 
 multi.innerHTML=
 "x"+x.toFixed(2);
 
 
-rocket.style.bottom=
-(20+x*20)+"px";
+
+rocket.style.bottom =
+(20+x*25)+"px";
+
 
 
 
@@ -180,11 +257,11 @@ if(x>=target){
 clearInterval(timer);
 
 
-document.getElementById("result").innerHTML=
-"✅ بردی +"+(bet*target).toFixed(0)+" DOGS";
+result.innerHTML=
+"✅ بردی +"+Math.floor(bet*target)+" DOGS";
 
 
-finish();
+end();
 
 
 }
@@ -197,11 +274,12 @@ if(x>=crash){
 clearInterval(timer);
 
 
-document.getElementById("result").innerHTML=
+result.innerHTML=
 "💥 انفجار x"+crash;
 
 
-finish();
+end();
+
 
 }
 
@@ -215,17 +293,22 @@ finish();
 
 
 
-function finish(){
+
+
+function end(){
 
 
 playing=false;
 
 
-setTimeout(()=>{
+setTimeout(function(){
+
 
 document.getElementById("rocket").style.bottom="20px";
 
+
 document.getElementById("multi").innerHTML="x1.00";
+
 
 },2000);
 
@@ -235,5 +318,7 @@ document.getElementById("multi").innerHTML="x1.00";
 
 </script>
 
+
 </body>
+
 </html>
