@@ -1,77 +1,50 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
-
 <head>
-
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>DOGS LIMBO</title>
+<title>DOGS LIMBO 🚀</title>
 
 <style>
 
 body{
-background:#07111f;
+background:#050b16;
 color:white;
 font-family:tahoma;
 text-align:center;
 }
 
 .box{
-max-width:450px;
+width:400px;
 margin:auto;
 padding:20px;
 }
 
-h1{
-font-size:40px;
-}
-
-#balance{
-color:#00ff99;
-}
-
-
 .game{
-
-height:350px;
+height:300px;
 background:#02050b;
 border-radius:20px;
 position:relative;
 overflow:hidden;
-
 }
-
 
 #rocket{
-
 position:absolute;
-bottom:40px;
-right:40px;
-font-size:65px;
-transition:0.2s;
-
+bottom:20px;
+right:20px;
+font-size:60px;
+transition:.2s;
 }
-
 
 #multi{
-
-position:absolute;
-bottom:10px;
-left:50%;
-transform:translateX(-50%);
-
-font-size:35px;
+font-size:40px;
 color:#00ff99;
-
+margin:15px;
 }
-
-
 
 input,button{
 
 width:90%;
-padding:14px;
+padding:15px;
 margin:8px;
 border-radius:12px;
 border:0;
@@ -79,43 +52,29 @@ font-size:18px;
 
 }
 
-
 button{
-
-background:#0099ff;
+background:#00aaff;
 color:white;
-
 }
-
-
-#result{
-
-font-size:25px;
-margin-top:20px;
-
-}
-
 
 </style>
 
 </head>
 
-
 <body>
 
-
 <div class="box">
-
 
 <h1>🚀 DOGS LIMBO</h1>
 
 
 <h2>
 💰 موجودی:
-<span id="balance">0</span>
+<span id="balance">
+10000
+</span>
 DOGS
 </h2>
-
 
 
 <div class="game">
@@ -124,37 +83,26 @@ DOGS
 🚀
 </div>
 
+</div>
+
 
 <div id="multi">
 x1.00
 </div>
 
 
-</div>
+<input id="bet" placeholder="تعداد DOGS">
 
 
-
-<input id="bet"
-type="number"
-placeholder="تعداد DOGS">
+<input id="target" placeholder="ضریب مثال 2.5">
 
 
-
-<input id="target"
-type="number"
-step="0.01"
-placeholder="ضریب مثال 2.5">
-
-
-
-<button onclick="startGame()">
-🚀 شروع
+<button onclick="start()">
+شروع 🚀
 </button>
 
 
-
-<div id="result"></div>
-
+<h2 id="result"></h2>
 
 
 </div>
@@ -164,75 +112,54 @@ placeholder="ضریب مثال 2.5">
 <script>
 
 
-let userId="1";
+let playing=false;
 
 
-
-async function loadBalance(){
-
-try{
+function start(){
 
 
-let res=await fetch("/balance/"+userId);
-
-let data=await res.json();
+if(playing)return;
 
 
-document.getElementById("balance").innerHTML=
-data.balance;
-
-
-
-}catch(e){
-
-document.getElementById("balance").innerHTML=
-"خطا";
-
-}
-
-}
-
-
-
-async function startGame(){
-
-
-let bet=
+let bet =
 Number(document.getElementById("bet").value);
 
 
-let target=
+let target =
 Number(document.getElementById("target").value);
 
 
 
 if(!bet || !target){
 
-alert("تعداد و ضریب را وارد کن");
+alert("مقدار و ضریب را وارد کن");
 
 return;
 
 }
 
 
-
-let rocket=
-document.getElementById("rocket");
+playing=true;
 
 
-let multi=
-document.getElementById("multi");
-
-
-let result=
-document.getElementById("result");
+let crash =
+(Number(Math.random()*8)+1).toFixed(2);
 
 
 
 let x=1;
 
 
-let move=setInterval(()=>{
+let rocket =
+document.getElementById("rocket");
+
+
+let multi =
+document.getElementById("multi");
+
+
+
+let timer=setInterval(()=>{
 
 
 x+=0.05;
@@ -242,9 +169,41 @@ multi.innerHTML=
 "x"+x.toFixed(2);
 
 
-
 rocket.style.bottom=
-(40+x*15)+"px";
+(20+x*20)+"px";
+
+
+
+if(x>=target){
+
+
+clearInterval(timer);
+
+
+document.getElementById("result").innerHTML=
+"✅ بردی +"+(bet*target).toFixed(0)+" DOGS";
+
+
+finish();
+
+
+}
+
+
+
+if(x>=crash){
+
+
+clearInterval(timer);
+
+
+document.getElementById("result").innerHTML=
+"💥 انفجار x"+crash;
+
+
+finish();
+
+}
 
 
 
@@ -252,88 +211,29 @@ rocket.style.bottom=
 
 
 
-
-
-let res=await fetch("/limbo",{
-
-method:"POST",
-
-headers:{
-
-"Content-Type":"application/json"
-
-},
-
-
-body:JSON.stringify({
-
-id:userId,
-
-bet:bet,
-
-target:target
-
-})
-
-
-});
-
-
-
-let data=await res.json();
-
-
-
-clearInterval(move);
-
-
-
-if(data.win){
-
-
-result.innerHTML=
-"✅ بردی +"+data.prize+" DOGS 🚀";
-
-
-multi.innerHTML=
-"🚀 x"+target;
-
-
-}
-
-else{
-
-
-result.innerHTML=
-"💥 باختی";
-
-
-multi.innerHTML=
-"💣 انفجار";
-
-
 }
 
 
 
-rocket.style.bottom="40px";
+function finish(){
 
 
-loadBalance();
+playing=false;
 
+
+setTimeout(()=>{
+
+document.getElementById("rocket").style.bottom="20px";
+
+document.getElementById("multi").innerHTML="x1.00";
+
+},2000);
 
 
 }
-
-
-
-
-loadBalance();
 
 
 </script>
 
-
 </body>
-
 </html>
