@@ -985,8 +985,7 @@ async def admin_panel_buttons(
 # اجرای ربات
 # ==========================
 
-async def main():
-
+def main():
 
     app = (
         Application
@@ -995,8 +994,6 @@ async def main():
         .build()
     )
 
-
-
     app.add_handler(
         CommandHandler(
             "start",
@@ -1004,15 +1001,11 @@ async def main():
         )
     )
 
-
-
     app.add_handler(
         CallbackQueryHandler(
             buttons
         )
     )
-
-
 
     app.add_handler(
         CallbackQueryHandler(
@@ -1021,8 +1014,6 @@ async def main():
         )
     )
 
-
-
     app.add_handler(
         CallbackQueryHandler(
             admin_panel_buttons,
@@ -1030,17 +1021,12 @@ async def main():
         )
     )
 
-
-
     app.add_handler(
         MessageHandler(
-            filters.TEXT
-            & ~filters.COMMAND,
+            filters.TEXT & ~filters.COMMAND,
             user_text
         )
     )
-
-
 
     app.add_handler(
         MessageHandler(
@@ -1049,22 +1035,10 @@ async def main():
         )
     )
 
+    print("🚀 BOT STARTED")
 
-
-    print(
-        "🚀 BOT STARTED"
-    )
-
-
-
-    await app.run_polling()
-
-
-
+    app.run_polling()
 
 
 if __name__ == "__main__":
-
-    asyncio.run(
-        main()
-        )
+    main()
