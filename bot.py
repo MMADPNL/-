@@ -1,726 +1,462 @@
-import os
-import sqlite3
 import logging
-import time
-import hmac
-import hashlib
+import sqlite3
+import random
 import json
-import urllib.parse
-import secrets
-from threading import Thread
+from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import threading
+import asyncio
 
-from flask import Flask, request, jsonify, send_from_directory
-
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    WebAppInfo,
-)
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
-
-# =========================================================
-# SETTINGS
-# =========================================================
-
-TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
-WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
-
+# ------ تنظیمات اولیه ------
+TOKEN = "توکن_ربات_ت_را_اینجا_بگذار"  # از @BotFather بگیر
 OWNER_ID = 8552447077
+INITIAL_BALANCE = 1000
+OWNER_INITIAL = 10000
+WEBAPP_URL = "https://mmadpnl.github.io/-/"  # آدرس Mini App تو
 
-OWNER_DOGS = 10_000
-START_DOGS = 1_000
+logging.basicConfig(level=logging.INFO)
 
-DB_NAME = "bot.db"
+# ------ Flask برای API ------
+app_flask = Flask(__name__)
+CORS(app_flask)
 
-# =========================================================
-# LOGGING
-# =========================================================
-
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-
-logger = logging.getLogger(__name__)
-
-# =========================================================
-# FLASK
-# =========================================================
-
-web = Flask(
-    __name__,
-    static_folder="webapp",
-)
-
-# =========================================================
-# DATABASE
-# =========================================================
-
-def get_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
+# ------ دیتابیس ------
 def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT DEFAULT '',
-            first_name TEXT DEFAULT '',
-            dogs INTEGER NOT NULL
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS games (
-            game_id TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            bet INTEGER NOT NULL,
-            crash REAL NOT NULL,
-            status TEXT NOT NULL,
-            payout INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL
-        )
-    """)
-
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    dogs_balance INTEGER DEFAULT 1000
+                )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS games (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    bet INTEGER,
+                    target_multiplier REAL,
+                    result_multiplier REAL,
+                    win_loss TEXT,
+                    date TEXT
+                )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS deposits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    amount INTEGER,
+                    info TEXT,
+                    status TEXT DEFAULT 'pending'
+                )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS withdrawals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    amount INTEGER,
+                    username TEXT,
+                    status TEXT DEFAULT 'pending'
+                )''')
+    c.execute("INSERT OR IGNORE INTO users (user_id, username, dogs_balance) VALUES (?, ?, ?)",
+              (OWNER_ID, "owner", OWNER_INITIAL))
     conn.commit()
     conn.close()
 
+init_db()
 
-# =========================================================
-# USERS
-# =========================================================
-
-def ensure_user(user_id, username="", first_name=""):
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    row = cur.execute(
-        "SELECT dogs FROM users WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
-
-    if row is None:
-
-        if user_id == OWNER_ID:
-            dogs = OWNER_DOGS
-        else:
-            dogs = START_DOGS
-
-        cur.execute(
-            """
-            INSERT INTO users
-            (user_id, username, first_name, dogs)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                username or "",
-                first_name or "",
-                dogs,
-            ),
-        )
-
-    else:
-
-        dogs = row["dogs"]
-
-        cur.execute(
-            """
-            UPDATE users
-            SET username = ?,
-                first_name = ?
-            WHERE user_id = ?
-            """,
-            (
-                username or "",
-                first_name or "",
-                user_id,
-            ),
-        )
-
-    conn.commit()
-    conn.close()
-
-    return dogs
-
-
+# ------ توابع کمکی دیتابیس ------
 def get_balance(user_id):
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("SELECT dogs_balance FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
 
-    conn = get_db()
+def update_balance(user_id, amount):
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("UPDATE users SET dogs_balance = dogs_balance + ? WHERE user_id=?", (amount, user_id))
+    conn.commit()
+    conn.close()
+    return get_balance(user_id)
 
-    row = conn.execute(
-        "SELECT dogs FROM users WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
-
+def register_user(user_id, username):
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO users (user_id, username, dogs_balance) VALUES (?, ?, ?)",
+              (user_id, username, INITIAL_BALANCE))
+    conn.commit()
     conn.close()
 
-    if row is None:
-        return None
+def save_game(user_id, bet, target, result, win_loss):
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("INSERT INTO games (user_id, bet, target_multiplier, result_multiplier, win_loss, date) VALUES (?, ?, ?, ?, ?, ?)",
+              (user_id, bet, target, result, win_loss, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
-    return int(row["dogs"])
-
-
-# =========================================================
-# TELEGRAM WEBAPP SECURITY
-# =========================================================
-
-def validate_telegram_data(init_data):
-
-    if not TOKEN or not init_data:
-        return None
-
+# ------ API های Flask برای Mini App ------
+@app_flask.route('/api/balance', methods=['GET'])
+def api_balance():
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
     try:
+        user_id = int(user_id)
+        balance = get_balance(user_id)
+        if balance is None:
+            return jsonify({'error': 'User not found'}), 404
+        return jsonify({'balance': balance})
+    except:
+        return jsonify({'error': 'Invalid user_id'}), 400
 
-        data = dict(
-            urllib.parse.parse_qsl(
-                init_data,
-                keep_blank_values=True,
-            )
-        )
-
-        received_hash = data.pop("hash", None)
-
-        if not received_hash:
-            return None
-
-        auth_date = int(
-            data.get("auth_date", "0")
-        )
-
-        # Session expires after 24 hours
-        if time.time() - auth_date > 86400:
-            return None
-
-        check_string = "\n".join(
-            f"{key}={data[key]}"
-            for key in sorted(data)
-        )
-
-        secret_key = hmac.new(
-            b"WebAppData",
-            TOKEN.encode(),
-            hashlib.sha256,
-        ).digest()
-
-        calculated_hash = hmac.new(
-            secret_key,
-            check_string.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-
-        if not hmac.compare_digest(
-            calculated_hash,
-            received_hash,
-        ):
-            return None
-
-        telegram_user = json.loads(
-            data["user"]
-        )
-
-        return telegram_user
-
-    except Exception as e:
-
-        logger.warning(
-            "Telegram validation error: %s",
-            e,
-        )
-
-        return None
-
-
-def get_web_user():
-
-    init_data = request.headers.get(
-        "X-Telegram-Init-Data",
-        "",
-    )
-
-    return validate_telegram_data(
-        init_data
-    )
-
-
-# =========================================================
-# CRASH POINT
-# =========================================================
-
-def generate_crash():
-
-    # Demo-only virtual game.
-    # Generates a value between 1.00 and 10.00.
-
-    number = secrets.randbelow(900) + 100
-
-    return round(
-        number / 100,
-        2,
-    )
-
-
-# =========================================================
-# WEB APP
-# =========================================================
-
-@web.get("/")
-def home():
-
-    return send_from_directory(
-        "webapp",
-        "index.html",
-    )
-
-
-# =========================================================
-# BALANCE API
-# =========================================================
-
-@web.post("/api/balance")
-def balance_api():
-
-    user = get_web_user()
-
-    if not user:
-        return jsonify({
-            "error": "جلسه تلگرام معتبر نیست"
-        }), 401
-
-    user_id = int(user["id"])
-
-    dogs = ensure_user(
-        user_id,
-        user.get("username"),
-        user.get("first_name"),
-    )
-
-    return jsonify({
-        "ok": True,
-        "dogs": dogs,
-    })
-
-
-# =========================================================
-# START GAME
-# =========================================================
-
-@web.post("/api/start-game")
-def start_game():
-
-    user = get_web_user()
-
-    if not user:
-        return jsonify({
-            "error": "جلسه تلگرام معتبر نیست"
-        }), 401
-
-    user_id = int(user["id"])
-
-    ensure_user(
-        user_id,
-        user.get("username"),
-        user.get("first_name"),
-    )
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
+@app_flask.route('/api/start-game', methods=['POST'])
+def api_start_game():
+    data = request.json
+    user_id = data.get('user_id')
+    bet = data.get('bet')
+    target = data.get('target')
+    if not user_id or not bet or not target:
+        return jsonify({'error': 'Missing parameters'}), 400
     try:
-        bet = int(
-            data.get("bet", 0)
-        )
-    except Exception:
-        bet = 0
-
-    if bet < 1:
-        return jsonify({
-            "error": "مبلغ شرط نامعتبر است"
-        }), 400
-
-    conn = get_db()
-
-    try:
-
-        # Check balance
-        row = conn.execute(
-            "SELECT dogs FROM users WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-
-        if not row:
-            return jsonify({
-                "error": "کاربر پیدا نشد"
-            }), 400
-
-        balance = int(row["dogs"])
-
+        user_id = int(user_id)
+        bet = int(bet)
+        target = float(target)
+        balance = get_balance(user_id)
+        if balance is None:
+            return jsonify({'error': 'User not found'}), 404
         if balance < bet:
-            return jsonify({
-                "error": "داگز کافی نیست",
-                "dogs": balance,
-            }), 400
-
-        # Prevent multiple active games
-        active = conn.execute(
-            """
-            SELECT game_id
-            FROM games
-            WHERE user_id = ?
-            AND status = 'active'
-            """,
-            (user_id,),
-        ).fetchone()
-
-        if active:
-            return jsonify({
-                "error": "یک بازی فعال دارید"
-            }), 400
-
-        # Deduct bet
-        conn.execute(
-            """
-            UPDATE users
-            SET dogs = dogs - ?
-            WHERE user_id = ?
-            """,
-            (
-                bet,
-                user_id,
-            ),
-        )
-
-        # Generate server-side crash
-        crash = generate_crash()
-
-        game_id = secrets.token_urlsafe(
-            18
-        )
-
-        conn.execute(
-            """
-            INSERT INTO games
-            (game_id, user_id, bet, crash, status, payout, created_at)
-            VALUES (?, ?, ?, ?, 'active', 0, ?)
-            """,
-            (
-                game_id,
-                user_id,
-                bet,
-                crash,
-                int(time.time()),
-            ),
-        )
-
-        conn.commit()
-
-        new_balance = get_balance(
-            user_id
-        )
-
+            return jsonify({'error': 'Insufficient balance'}), 400
+        
+        # شبیه‌سازی بازی Crash
+        crash_point = random.uniform(1.0, 5.0)
+        win = False
+        result_multiplier = crash_point
+        if crash_point >= target:
+            win = True
+            win_amount = int(bet * target)
+            new_balance = update_balance(user_id, win_amount - bet)  # برداشت شرط و اضافه کردن برد
+        else:
+            win_amount = 0
+            new_balance = update_balance(user_id, -bet)  # کم کردن شرط
+        
+        save_game(user_id, bet, target, crash_point, 'win' if win else 'loss')
+        
         return jsonify({
-            "ok": True,
-            "game_id": game_id,
-            "crash": crash,
-            "dogs": new_balance,
+            'win': win,
+            'crash_point': crash_point,
+            'win_amount': win_amount,
+            'new_balance': new_balance
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    finally:
-        conn.close()
-
-
-# =========================================================
-# CASHOUT
-# =========================================================
-
-@web.post("/api/cashout")
-def cashout():
-
-    user = get_web_user()
-
-    if not user:
-        return jsonify({
-            "error": "جلسه تلگرام معتبر نیست"
-        }), 401
-
-    user_id = int(user["id"])
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    game_id = str(
-        data.get("game_id", "")
-    )
-
-    try:
-        multiplier = float(
-            data.get("multiplier", 0)
-        )
-    except Exception:
-        multiplier = 0
-
-    if not game_id:
-        return jsonify({
-            "error": "بازی نامعتبر است"
-        }), 400
-
-    conn = get_db()
-
-    try:
-
-        game = conn.execute(
-            """
-            SELECT *
-            FROM games
-            WHERE game_id = ?
-            AND user_id = ?
-            """,
-            (
-                game_id,
-                user_id,
-            ),
-        ).fetchone()
-
-        if not game:
-            return jsonify({
-                "error": "بازی پیدا نشد"
-            }), 404
-
-        if game["status"] != "active":
-            return jsonify({
-                "error": "این بازی قبلاً تمام شده"
-            }), 400
-
-        crash = float(
-            game["crash"]
-        )
-
-        # Cannot cash out after crash
-        if multiplier >= crash:
-
-            conn.execute(
-                """
-                UPDATE games
-                SET status = 'lost'
-                WHERE game_id = ?
-                """,
-                (game_id,),
-            )
-
-            conn.commit()
-
-            return jsonify({
-                "ok": False,
-                "lost": True,
-                "dogs": get_balance(
-                    user_id
-                ),
-            })
-
-        # Minimum cashout
-        if multiplier < 1.01:
-            return jsonify({
-                "error": "ضریب برداشت نامعتبر است"
-            }), 400
-
-        multiplier = round(
-            multiplier,
-            2,
-        )
-
-        bet = int(
-            game["bet"]
-        )
-
-        payout = int(
-            bet * multiplier
-        )
-
-        conn.execute(
-            """
-            UPDATE users
-            SET dogs = dogs + ?
-            WHERE user_id = ?
-            """,
-            (
-                payout,
-                user_id,
-            ),
-        )
-
-        conn.execute(
-            """
-            UPDATE games
-            SET status = 'won',
-                payout = ?
-            WHERE game_id = ?
-            """,
-            (
-                payout,
-                game_id,
-            ),
-        )
-
-        conn.commit()
-
-        return jsonify({
-            "ok": True,
-            "payout": payout,
-            "dogs": get_balance(
-                user_id
-            ),
-        })
-
-    finally:
-        conn.close()
-
-
-# =========================================================
-# TELEGRAM COMMANDS
-# =========================================================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
+# ------ دستورات ربات (Telegram) ------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    dogs = ensure_user(
-        user.id,
-        user.username,
-        user.first_name,
-    )
-
-    if WEBAPP_URL:
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "🚀 بازی موشک",
-                    web_app=WebAppInfo(
-                        url=WEBAPP_URL
-                    ),
-                )
-            ]
-        ])
-
-        await update.message.reply_text(
-            f"سلام {user.first_name} 👋\n\n"
-            f"🐶 داگز: {dogs:,}\n\n"
-            f"برای ورود به بازی موشک "
-            f"روی دکمه زیر بزن.",
-            reply_markup=keyboard,
-        )
-
-    else:
-
-        await update.message.reply_text(
-            f"سلام {user.first_name} 👋\n\n"
-            f"🐶 داگز: {dogs:,}\n\n"
-            f"⚠️ WEBAPP_URL تنظیم نشده."
-        )
-
-
-async def balance_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    user = update.effective_user
-
-    dogs = ensure_user(
-        user.id,
-        user.username,
-        user.first_name,
-    )
-
+    register_user(user.id, user.username or "unknown")
+    balance = get_balance(user.id)
+    keyboard = [
+        [InlineKeyboardButton("🚀 بازی DOGS Rocket", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [InlineKeyboardButton("💰 موجودی", callback_data="balance")],
+        [InlineKeyboardButton("📥 واریز", callback_data="deposit")],
+        [InlineKeyboardButton("📤 برداشت", callback_data="withdraw")],
+    ]
+    if user.id == OWNER_ID:
+        keyboard.append([InlineKeyboardButton("👑 پنل مدیریت", callback_data="admin_panel")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        f"🐶 موجودی داگز شما:\n\n"
-        f"{dogs:,} DOGS"
+        f"🐶 به DOGS Rocket خوش آمدی!\nموجودی شما: {balance} DOGS",
+        reply_markup=reply_markup
     )
 
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    balance = get_balance(user_id)
+    await query.edit_message_text(f"💰 موجودی شما: {balance} DOGS")
 
-# =========================================================
-# WEB SERVER
-# =========================================================
+async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📥 برای واریز، پیام زیر را به فرمت زیر ارسال کن:\n"
+        "`ULTRA 5000 DOGS @IQ7XA`\n\n"
+        "سپس منتظر تایید مالک باش."
+    )
 
-def run_web():
+async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📤 برای برداشت، مقدار و یوزرنیم خود را ارسال کن:\n"
+        "مثلاً:\n`3000 @username`"
+    )
 
-    port = int(
-        os.getenv(
-            "PORT",
-            "8080",
+async def handle_deposit_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user_id = update.effective_user.id
+    parts = text.split()
+    if len(parts) >= 4 and parts[0].upper() == "ULTRA" and parts[2].upper() == "DOGS":
+        try:
+            amount = int(parts[1])
+            code = parts[3]
+            conn = sqlite3.connect("database.db")
+            c = conn.cursor()
+            c.execute("INSERT INTO deposits (user_id, amount, info) VALUES (?, ?, ?)",
+                      (user_id, amount, f"{text}"))
+            conn.commit()
+            conn.close()
+            await update.message.reply_text("✅ درخواست واریز ثبت شد، منتظر تایید مالک باشید.")
+            await context.bot.send_message(
+                OWNER_ID,
+                f"📥 درخواست واریز جدید:\nکاربر: {user_id}\nمبلغ: {amount} DOGS\nکد: {code}\nبرای تایید /confirm_deposit {amount} {user_id}\nبرای رد /reject_deposit {amount} {user_id}"
+            )
+        except:
+            await update.message.reply_text("❌ خطا در ثبت درخواست، دوباره تلاش کن.")
+    else:
+        await update.message.reply_text("❌ فرمت اشتباه، باید مثل: `ULTRA 5000 DOGS @IQ7XA`")
+
+async def handle_withdraw_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user_id = update.effective_user.id
+    parts = text.split()
+    if len(parts) == 2 and parts[0].isdigit():
+        amount = int(parts[0])
+        username = parts[1]
+        balance = get_balance(user_id)
+        if balance is None or balance < amount:
+            await update.message.reply_text("❌ موجودی کافی نیست.")
+            return
+        conn = sqlite3.connect("database.db")
+        c = conn.cursor()
+        c.execute("INSERT INTO withdrawals (user_id, amount, username) VALUES (?, ?, ?)",
+                  (user_id, amount, username))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text("✅ درخواست برداشت ثبت شد، منتظر تایید مالک باشید.")
+        await context.bot.send_message(
+            OWNER_ID,
+            f"📤 درخواست برداشت جدید:\nکاربر: {user_id}\nمبلغ: {amount} DOGS\nیوزر: {username}\nبرای تایید /confirm_withdraw {amount} {user_id}\nبرای رد /reject_withdraw {amount} {user_id}"
         )
-    )
+    else:
+        await update.message.reply_text("❌ فرمت اشتباه، باید مثل: `3000 @username`")
 
-    web.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-    )
+# ------ دستورات مدیریت مالک ------
+async def confirm_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("فرمت: /confirm_deposit مقدار user_id")
+        return
+    amount = int(args[0])
+    user_id = int(args[1])
+    update_balance(user_id, amount)
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("UPDATE deposits SET status='confirmed' WHERE user_id=? AND amount=? AND status='pending'", (user_id, amount))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f"✅ واریز {amount} DOGS برای کاربر {user_id} تایید شد.")
+    try:
+        await context.bot.send_message(user_id, f"✅ واریز {amount} DOGS شما تایید شد و به موجودی اضافه گردید.")
+    except:
+        pass
 
+async def reject_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("فرمت: /reject_deposit مقدار user_id")
+        return
+    amount = int(args[0])
+    user_id = int(args[1])
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("UPDATE deposits SET status='rejected' WHERE user_id=? AND amount=? AND status='pending'", (user_id, amount))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f"❌ واریز {amount} DOGS برای کاربر {user_id} رد شد.")
+    try:
+        await context.bot.send_message(user_id, f"❌ درخواست واریز {amount} DOGS شما رد شد.")
+    except:
+        pass
 
-# =========================================================
-# MAIN
-# =========================================================
+async def confirm_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("فرمت: /confirm_withdraw مقدار user_id")
+        return
+    amount = int(args[0])
+    user_id = int(args[1])
+    balance = get_balance(user_id)
+    if balance is None or balance < amount:
+        await update.message.reply_text("❌ موجودی کاربر کافی نیست.")
+        return
+    update_balance(user_id, -amount)
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("UPDATE withdrawals SET status='confirmed' WHERE user_id=? AND amount=? AND status='pending'", (user_id, amount))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f"✅ برداشت {amount} DOGS برای کاربر {user_id} تایید شد.")
+    try:
+        await context.bot.send_message(user_id, f"✅ برداشت {amount} DOGS شما تایید شد و از موجودی کسر گردید.")
+    except:
+        pass
+
+async def reject_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("فرمت: /reject_withdraw مقدار user_id")
+        return
+    amount = int(args[0])
+    user_id = int(args[1])
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("UPDATE withdrawals SET status='rejected' WHERE user_id=? AND amount=? AND status='pending'", (user_id, amount))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f"❌ برداشت {amount} DOGS برای کاربر {user_id} رد شد.")
+    try:
+        await context.bot.send_message(user_id, f"❌ درخواست برداشت {amount} DOGS شما رد شد.")
+    except:
+        pass
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != OWNER_ID:
+        await query.edit_message_text("⛔ دسترسی غیرمجاز")
+        return
+    keyboard = [
+        [InlineKeyboardButton("👥 تعداد کاربران", callback_data="admin_users")],
+        [InlineKeyboardButton("💰 کل موجودی", callback_data="admin_total_balance")],
+        [InlineKeyboardButton("📥 لیست واریزها", callback_data="admin_deposits")],
+        [InlineKeyboardButton("📤 لیست برداشت‌ها", callback_data="admin_withdrawals")],
+        [InlineKeyboardButton("➕ اضافه کردن DOGS", callback_data="admin_add")],
+        [InlineKeyboardButton("➖ کم کردن DOGS", callback_data="admin_sub")],
+        [InlineKeyboardButton("📊 آمار بازی‌ها", callback_data="admin_stats")],
+    ]
+    await query.edit_message_text("👑 پنل مدیریت:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != OWNER_ID:
+        await query.edit_message_text("⛔ دسترسی غیرمجاز")
+        return
+    data = query.data
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    if data == "admin_users":
+        c.execute("SELECT COUNT(*) FROM users")
+        count = c.fetchone()[0]
+        await query.edit_message_text(f"👥 تعداد کاربران: {count}")
+    elif data == "admin_total_balance":
+        c.execute("SELECT SUM(dogs_balance) FROM users")
+        total = c.fetchone()[0] or 0
+        await query.edit_message_text(f"💰 کل موجودی DOGS: {total}")
+    elif data == "admin_deposits":
+        c.execute("SELECT id, user_id, amount, status FROM deposits WHERE status='pending'")
+        rows = c.fetchall()
+        if not rows:
+            await query.edit_message_text("📭 هیچ درخواست واریز در انتظاری نیست.")
+        else:
+            msg = "📥 لیست واریزهای در انتظار:\n"
+            for row in rows:
+                msg += f"ID: {row[0]} | کاربر: {row[1]} | مبلغ: {row[2]} | وضعیت: {row[3]}\n"
+                msg += f"برای تایید: /confirm_deposit {row[2]} {row[1]}\nبرای رد: /reject_deposit {row[2]} {row[1]}\n\n"
+            await query.edit_message_text(msg)
+    elif data == "admin_withdrawals":
+        c.execute("SELECT id, user_id, amount, status FROM withdrawals WHERE status='pending'")
+        rows = c.fetchall()
+        if not rows:
+            await query.edit_message_text("📭 هیچ درخواست برداشت در انتظاری نیست.")
+        else:
+            msg = "📤 لیست برداشت‌های در انتظار:\n"
+            for row in rows:
+                msg += f"ID: {row[0]} | کاربر: {row[1]} | مبلغ: {row[2]} | وضعیت: {row[3]}\n"
+                msg += f"برای تایید: /confirm_withdraw {row[2]} {row[1]}\nبرای رد: /reject_withdraw {row[2]} {row[1]}\n\n"
+            await query.edit_message_text(msg)
+    elif data == "admin_stats":
+        c.execute("SELECT COUNT(*), SUM(win_loss='win'), SUM(win_loss='loss') FROM games")
+        total, wins, losses = c.fetchone()
+        await query.edit_message_text(f"📊 آمار بازی‌ها:\nکل بازی‌ها: {total}\nبرد: {wins or 0}\nباخت: {losses or 0}")
+    elif data == "admin_add":
+        await query.edit_message_text("برای اضافه کردن DOGS دستی، از دستور /add_dogs user_id amount استفاده کن.")
+    elif data == "admin_sub":
+        await query.edit_message_text("برای کم کردن DOGS دستی، از دستور /sub_dogs user_id amount استفاده کن.")
+    conn.close()
+
+async def add_dogs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
+        await update.message.reply_text("فرمت: /add_dogs user_id amount")
+        return
+    user_id, amount = int(args[0]), int(args[1])
+    new_balance = update_balance(user_id, amount)
+    await update.message.reply_text(f"✅ {amount} DOGS به کاربر {user_id} اضافه شد. موجودی جدید: {new_balance}")
+
+async def sub_dogs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ دسترسی غیرمجاز")
+        return
+    args = context.args
+    if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
+        await update.message.reply_text("فرمت: /sub_dogs user_id amount")
+        return
+    user_id, amount = int(args[0]), int(args[1])
+    new_balance = update_balance(user_id, -amount)
+    await update.message.reply_text(f"✅ {amount} DOGS از کاربر {user_id} کم شد. موجودی جدید: {new_balance}")
+
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ دستور وجود ندارد")
+
+# ------ اجرای همزمان Flask و Telegram ------
+def run_flask():
+    app_flask.run(host="0.0.0.0", port=5000)
 
 def main():
+    # اجرای Flask در ترد جداگانه
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
 
-    if not TOKEN:
-        raise RuntimeError(
-            "BOT_TOKEN تنظیم نشده است."
-        )
+    # اجرای ربات تلگرام
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(balance, pattern="^balance$"))
+    app.add_handler(CallbackQueryHandler(deposit, pattern="^deposit$"))
+    app.add_handler(CallbackQueryHandler(withdraw, pattern="^withdraw$"))
+    app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
+    app.add_handler(CommandHandler("confirm_deposit", confirm_deposit))
+    app.add_handler(CommandHandler("reject_deposit", reject_deposit))
+    app.add_handler(CommandHandler("confirm_withdraw", confirm_withdraw))
+    app.add_handler(CommandHandler("reject_withdraw", reject_withdraw))
+    app.add_handler(CommandHandler("add_dogs", add_dogs))
+    app.add_handler(CommandHandler("sub_dogs", sub_dogs))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_deposit_request))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_request))
+    app.add_handler(MessageHandler(filters.COMMAND, unknown))
 
-    init_db()
-
-    Thread(
-        target=run_web,
-        daemon=True,
-    ).start()
-
-    application = (
-        Application
-        .builder()
-        .token(TOKEN)
-        .build()
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "balance",
-            balance_command,
-        )
-    )
-
-    print(
-        "🚀 BOT + CRASH MINI APP STARTED"
-    )
-
-    application.run_polling(
-        drop_pending_updates=True
-    )
-
+    print("ربات روشن شد 🚀")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
