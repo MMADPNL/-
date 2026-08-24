@@ -1,7 +1,13 @@
-# ==============================
-# DOGS LIMBO BOT - FINAL
-# ==============================
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import os
+import sqlite3
+import urllib.parse
 
+from aiohttp import web
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -12,18 +18,14 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
-import sqlite3
-import logging
-import re
 
-
-# ==============================
+# =========================================================
 # SETTINGS
-# ==============================
+# =========================================================
 
 TOKEN = "8934137266:AAFqhml0_F3RdLExFZqhgASxl42tylMc_h8"
 
@@ -31,125 +33,345 @@ OWNER_ID = 8552447077
 
 MINI_APP_URL = "https://mmadpnl.github.io/-/"
 
-DEFAULT_BALANCE = 10000
+# آدرس عمومی Replit را اینجا قرار بده
+# مثال:
+# https://your-project.replit.app
+PUBLIC_API_URL = os.getenv(
+    "PUBLIC_API_URL",
+    "PUT_PUBLIC_REPLIT_URL_HERE"
+)
+
+PORT = int(os.getenv("PORT", "8080"))
 
 DB_FILE = "dogs.db"
 
+DEFAULT_BALANCE = 10000
 
-# ==============================
-# LOG
-# ==============================
+BOT_STATUS = True
 
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger("DOGS-LIMBO")
 
-
-# ==============================
+# =========================================================
 # DATABASE
-# ==============================
+# =========================================================
 
 db = sqlite3.connect(
     DB_FILE,
     check_same_thread=False
 )
 
-cur = db.cursor()
+db.execute("PRAGMA journal_mode=WAL")
+db.execute("PRAGMA busy_timeout=5000")
 
-
-cur.execute("""
+db.execute("""
 CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY,
+    username TEXT DEFAULT '',
+    first_name TEXT DEFAULT '',
     balance INTEGER NOT NULL DEFAULT 10000
 )
 """)
 
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS requests(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    amount INTEGER NOT NULL DEFAULT 0,
-    info TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending'
-)
-""")
-
-
 db.commit()
 
+db_lock = asyncio.Lock()
 
-# ==============================
-# USER
-# ==============================
 
-def add_user(uid):
+async def ensure_user(user):
 
-    cur.execute(
-        "INSERT OR IGNORE INTO users(id,balance) VALUES(?,?)",
-        (uid, DEFAULT_BALANCE)
+    async with db_lock:
+
+        db.execute(
+            """
+            INSERT INTO users(
+                id,
+                username,
+                first_name,
+                balance
+            )
+            VALUES(?,?,?,?)
+            ON CONFLICT(id)
+            DO UPDATE SET
+                username=excluded.username,
+                first_name=excluded.first_name
+            """,
+            (
+                user.id,
+                user.username or "",
+                user.first_name or "",
+                DEFAULT_BALANCE
+            )
+        )
+
+        db.commit()
+
+
+async def get_balance(uid):
+
+    async with db_lock:
+
+        row = db.execute(
+            """
+            SELECT balance
+            FROM users
+            WHERE id=?
+            """,
+            (uid,)
+        ).fetchone()
+
+        if row is None:
+            return 0
+
+        return int(row[0])
+
+
+async def change_balance(uid, amount):
+
+    async with db_lock:
+
+        row = db.execute(
+            """
+            SELECT balance
+            FROM users
+            WHERE id=?
+            """,
+            (uid,)
+        ).fetchone()
+
+        if row is None:
+            return False
+
+        old_balance = int(row[0])
+
+        new_balance = old_balance + amount
+
+        if new_balance < 0:
+            return False
+
+        db.execute(
+            """
+            UPDATE users
+            SET balance=?
+            WHERE id=?
+            """,
+            (
+                new_balance,
+                uid
+            )
+        )
+
+        db.commit()
+
+        return True
+
+
+# =========================================================
+# TELEGRAM MINI APP VALIDATION
+# =========================================================
+
+def validate_telegram_data(init_data):
+
+    if not init_data:
+        return None
+
+    if TOKEN == "PUT_NEW_BOT_TOKEN_HERE":
+        return None
+
+    try:
+
+        data = dict(
+            urllib.parse.parse_qsl(
+                init_data,
+                keep_blank_values=True
+            )
+        )
+
+        received_hash = data.pop(
+            "hash",
+            None
+        )
+
+        if not received_hash:
+            return None
+
+        data_check_string = "\n".join(
+            f"{key}={data[key]}"
+            for key in sorted(data)
+        )
+
+        secret_key = hmac.new(
+            b"WebAppData",
+            TOKEN.encode(),
+            hashlib.sha256
+        ).digest()
+
+        calculated_hash = hmac.new(
+            secret_key,
+            data_check_string.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(
+            calculated_hash,
+            received_hash
+        ):
+            return None
+
+        user_raw = data.get("user")
+
+        if not user_raw:
+            return None
+
+        user = json.loads(user_raw)
+
+        return int(user["id"])
+
+    except Exception as e:
+
+        log.error(
+            "Mini App validation error: %s",
+            e
+        )
+
+        return None
+
+
+# =========================================================
+# API
+# =========================================================
+
+async def api_health(request):
+
+    return web.json_response({
+        "ok": True,
+        "status": "online",
+        "service": "DOGS LIMBO"
+    })
+
+
+async def api_balance(request):
+
+    init_data = request.headers.get(
+        "X-Telegram-Init-Data",
+        ""
     )
 
-    db.commit()
-
-
-def get_balance(uid):
-
-    add_user(uid)
-
-    cur.execute(
-        "SELECT balance FROM users WHERE id=?",
-        (uid,)
+    uid = validate_telegram_data(
+        init_data
     )
 
-    row = cur.fetchone()
+    if not uid:
 
-    if not row:
-        return 0
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "invalid_init_data"
+            },
+            status=401
+        )
 
-    return int(row[0])
+    balance = await get_balance(uid)
 
-
-def change_balance(uid, amount):
-
-    add_user(uid)
-
-    current = get_balance(uid)
-
-    new_balance = current + amount
-
-    if new_balance < 0:
-        return False
-
-    cur.execute(
-        "UPDATE users SET balance=? WHERE id=?",
-        (new_balance, uid)
-    )
-
-    db.commit()
-
-    return True
+    return web.json_response({
+        "ok": True,
+        "user_id": uid,
+        "balance": balance
+    })
 
 
-# ==============================
-# START
-# ==============================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
+@web.middleware
+async def cors_middleware(
+    request,
+    handler
 ):
 
-    uid = update.effective_user.id
+    if request.method == "OPTIONS":
 
-    balance = get_balance(uid)
+        response = web.Response(
+            status=204
+        )
+
+    else:
+
+        response = await handler(
+            request
+        )
+
+    response.headers[
+        "Access-Control-Allow-Origin"
+    ] = "*"
+
+    response.headers[
+        "Access-Control-Allow-Headers"
+    ] = (
+        "Content-Type, "
+        "X-Telegram-Init-Data"
+    )
+
+    response.headers[
+        "Access-Control-Allow-Methods"
+    ] = "GET, OPTIONS"
+
+    return response
 
 
-    keyboard = [
+async def start_api():
+
+    app = web.Application(
+        middlewares=[
+            cors_middleware
+        ]
+    )
+
+    app.router.add_get(
+        "/api/health",
+        api_health
+    )
+
+    app.router.add_get(
+        "/api/balance",
+        api_balance
+    )
+
+    app.router.add_options(
+        "/{tail:.*}",
+        lambda request: web.Response(
+            status=204
+        )
+    )
+
+    runner = web.AppRunner(
+        app
+    )
+
+    await runner.setup()
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        PORT
+    )
+
+    await site.start()
+
+    log.info(
+        "API RUNNING ON PORT %s",
+        PORT
+    )
+
+
+# =========================================================
+# MAIN MENU
+# =========================================================
+
+def main_keyboard():
+
+    return InlineKeyboardMarkup([
 
         [
             InlineKeyboardButton(
@@ -161,124 +383,151 @@ async def start(
         ],
 
         [
-
             InlineKeyboardButton(
-                "💳 Deposit",
-                callback_data="deposit"
-            ),
-
-            InlineKeyboardButton(
-                "📤 Withdraw",
-                callback_data="withdraw"
+                "💰 موجودی",
+                callback_data="balance"
             )
-
         ],
 
         [
-
             InlineKeyboardButton(
-                "👑 Admin Panel",
+                "👑 پنل مدیریت",
                 callback_data="admin"
             )
-
         ]
 
-    ]
+    ])
 
+
+# =========================================================
+# ADMIN MENU
+# =========================================================
+
+def admin_keyboard():
+
+    return InlineKeyboardMarkup([
+
+        [
+            InlineKeyboardButton(
+                "📊 آمار",
+                callback_data="admin_stats"
+            ),
+
+            InlineKeyboardButton(
+                "👥 کاربران",
+                callback_data="admin_users"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "💰 شارژ کاربر",
+                callback_data="admin_add"
+            ),
+
+            InlineKeyboardButton(
+                "➖ کسر موجودی",
+                callback_data="admin_remove"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🟢 وضعیت ربات",
+                callback_data="admin_status"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🔄 بروزرسانی",
+                callback_data="admin"
+            )
+        ]
+
+    ])
+
+
+# =========================================================
+# START
+# =========================================================
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    user = update.effective_user
+
+    await ensure_user(user)
+
+    balance = await get_balance(
+        user.id
+    )
 
     await update.message.reply_text(
 
         f"""
 🚀 DOGS LIMBO
 
-💰 Balance:
+💰 موجودی شما:
+
 {balance:,} DOGS
 """,
 
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        )
-
+        reply_markup=main_keyboard()
     )
 
 
-# ==============================
+# =========================================================
 # BUTTONS
-# ==============================
+# =========================================================
 
 async def buttons(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
+    global BOT_STATUS
+
     query = update.callback_query
 
     await query.answer()
 
-    uid = query.from_user.id
+    user = query.from_user
 
+    await ensure_user(user)
 
-    # --------------------------
-    # DEPOSIT
-    # --------------------------
+    data = query.data
 
-    if query.data == "deposit":
+    # -------------------------
+    # BALANCE
+    # -------------------------
 
-        context.user_data.clear()
+    if data == "balance":
 
-        context.user_data["step"] = "deposit"
-
+        balance = await get_balance(
+            user.id
+        )
 
         await query.message.reply_text(
 
+            f"""
+💰 موجودی شما
+
+{balance:,} DOGS
 """
-💳 DEPOSIT DOGS
-
-فرمت:
-
-ULTRA 5000 DOGS @IQ7XA
-
-ولت:
-
-UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
-
-شات یا لینک تراکنش یا رسید را ارسال کن.
-
-بعد از ارسال، درخواست فوراً برای مالک ارسال می‌شود.
-"""
-
         )
 
         return
 
-
-    # --------------------------
-    # WITHDRAW
-    # --------------------------
-
-    if query.data == "withdraw":
-
-        context.user_data.clear()
-
-        context.user_data["step"] = "withdraw_amount"
-
-
-        await query.message.reply_text(
-
-            "📤 مقدار DOGS برای برداشت را بفرست."
-
-        )
-
-        return
-
-
-    # --------------------------
+    # -------------------------
     # ADMIN
-    # --------------------------
+    # -------------------------
 
-    if query.data == "admin":
+    if data == "admin":
 
-        if uid != OWNER_ID:
+        if user.id != OWNER_ID:
 
             await query.message.reply_text(
                 "❌ دسترسی ندارید."
@@ -286,987 +535,409 @@ UQAhqiO6qZc_aRpkIygNulDUw64jCSR_VXX7Vg2Cbbv1Uz1h
 
             return
 
-
-        keyboard = [
-
-            [
-                InlineKeyboardButton(
-                    "📊 آمار",
-                    callback_data="admin_stats"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    "📋 درخواست‌ها",
-                    callback_data="admin_requests"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    "💰 شارژ کاربر",
-                    callback_data="admin_add"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    "➖ کسر موجودی",
-                    callback_data="admin_remove"
-                )
-            ]
-
-        ]
-
-
         await query.message.reply_text(
 
-            "👑 DOGS ADMIN PANEL",
+            """
+👑 DOGS LIMBO ADMIN PANEL
 
-            reply_markup=InlineKeyboardMarkup(
-                keyboard
-            )
+پنل مدیریت را انتخاب کن:
+""",
 
+            reply_markup=admin_keyboard()
         )
 
         return
 
+    # -------------------------
+    # STATS
+    # -------------------------
 
-    # --------------------------
-    # ADMIN STATS
-    # --------------------------
+    if data == "admin_stats":
 
-    if query.data == "admin_stats":
-
-        if uid != OWNER_ID:
+        if user.id != OWNER_ID:
             return
 
+        async with db_lock:
 
-        cur.execute(
-            "SELECT COUNT(*) FROM users"
-        )
+            users = db.execute(
+                """
+                SELECT COUNT(*)
+                FROM users
+                """
+            ).fetchone()[0]
 
-        users = cur.fetchone()[0]
-
-
-        cur.execute(
-            "SELECT COALESCE(SUM(balance),0) FROM users"
-        )
-
-        total = cur.fetchone()[0]
-
+            total = db.execute(
+                """
+                SELECT COALESCE(
+                    SUM(balance),
+                    0
+                )
+                FROM users
+                """
+            ).fetchone()[0]
 
         await query.message.reply_text(
 
             f"""
-📊 ADMIN STATS
+📊 آمار ربات
 
-👤 Users:
+👥 کاربران:
 {users}
 
-💰 Total DOGS:
-{total:,}
-"""
+💰 مجموع موجودی:
+{total:,} DOGS
 
+🟢 وضعیت:
+{"روشن" if BOT_STATUS else "خاموش"}
+"""
         )
 
         return
 
+    # -------------------------
+    # USERS
+    # -------------------------
 
-    # --------------------------
-    # ADMIN REQUESTS
-    # --------------------------
+    if data == "admin_users":
 
-    if query.data == "admin_requests":
-
-        if uid != OWNER_ID:
+        if user.id != OWNER_ID:
             return
 
+        async with db_lock:
 
-        cur.execute("""
-
-            SELECT
-                id,
-                user_id,
-                type,
-                amount,
-                info
-
-            FROM requests
-
-            WHERE status='pending'
-
-            ORDER BY id DESC
-
-        """)
-
-
-        rows = cur.fetchall()
-
+            rows = db.execute(
+                """
+                SELECT
+                    id,
+                    username,
+                    first_name,
+                    balance
+                FROM users
+                ORDER BY balance DESC
+                LIMIT 20
+                """
+            ).fetchall()
 
         if not rows:
 
             await query.message.reply_text(
-                "📭 درخواست در انتظار وجود ندارد."
+                "👥 کاربری وجود ندارد."
             )
 
             return
 
+        text = "👥 کاربران\n\n"
 
-        for row in rows:
+        for uid, username, first_name, balance in rows:
 
-            rid = row[0]
-
-            user_id = row[1]
-
-            typ = row[2]
-
-            amount = row[3]
-
-            info = row[4]
-
-
-            if typ == "deposit":
-
-                title = "💳 واریزی"
-
-            else:
-
-                title = "📤 برداشت"
-
-
-            keyboard = [
-
-                [
-
-                    InlineKeyboardButton(
-                        "✅ تایید",
-                        callback_data=f"approve_{rid}"
-                    ),
-
-                    InlineKeyboardButton(
-                        "❌ رد",
-                        callback_data=f"reject_{rid}"
-                    )
-
-                ]
-
-            ]
-
-
-            await query.message.reply_text(
-
-                f"""
-{title}
-
-🆔 Request:
-{rid}
-
-👤 User:
-{user_id}
-
-💰 Amount:
-{amount:,} DOGS
-
-📝 Info:
-{info}
-
-⏳ Pending
-""",
-
-                reply_markup=InlineKeyboardMarkup(
-                    keyboard
-                )
-
+            name = (
+                first_name
+                or username
+                or str(uid)
             )
+
+            text += (
+                f"👤 {name}\n"
+                f"🆔 {uid}\n"
+                f"💰 {balance:,} DOGS\n\n"
+            )
+
+        await query.message.reply_text(
+            text
+        )
 
         return
 
+    # -------------------------
+    # ADD
+    # -------------------------
 
-    # --------------------------
-    # ADMIN ADD
-    # --------------------------
+    if data == "admin_add":
 
-    if query.data == "admin_add":
-
-        if uid != OWNER_ID:
+        if user.id != OWNER_ID:
             return
-
 
         context.user_data.clear()
 
-        context.user_data["admin_step"] = "add"
-
+        context.user_data[
+            "admin_step"
+        ] = "add"
 
         await query.message.reply_text(
 
-"""
+            """
 💰 شارژ کاربر
 
 فرمت:
 
-ID مقدار
+USER_ID AMOUNT
 
 مثال:
 
 123456789 5000
 """
-
         )
 
         return
 
+    # -------------------------
+    # REMOVE
+    # -------------------------
 
-    # --------------------------
-    # ADMIN REMOVE
-    # --------------------------
+    if data == "admin_remove":
 
-    if query.data == "admin_remove":
-
-        if uid != OWNER_ID:
+        if user.id != OWNER_ID:
             return
-
 
         context.user_data.clear()
 
-        context.user_data["admin_step"] = "remove"
-
+        context.user_data[
+            "admin_step"
+        ] = "remove"
 
         await query.message.reply_text(
 
-"""
+            """
 ➖ کسر موجودی
 
 فرمت:
 
-ID مقدار
+USER_ID AMOUNT
 
 مثال:
 
 123456789 1000
 """
+        )
 
+        return
+
+    # -------------------------
+    # STATUS
+    # -------------------------
+
+    if data == "admin_status":
+
+        if user.id != OWNER_ID:
+            return
+
+        await query.message.reply_text(
+
+            f"""
+🟢 وضعیت ربات
+
+وضعیت:
+{"🟢 روشن" if BOT_STATUS else "🔴 خاموش"}
+
+🚀 API:
+فعال
+"""
         )
 
         return
 
 
-# ==============================
-# USER TEXT
-# ==============================
+# =========================================================
+# ADMIN TEXT
+# =========================================================
 
-async def text_handler(
+async def admin_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    uid = update.effective_user.id
+    user = update.effective_user
 
-    text = update.message.text.strip()
+    if user.id != OWNER_ID:
+        return
 
-
-    # ==========================
-    # ADMIN
-    # ==========================
-
-    admin_step = context.user_data.get(
+    step = context.user_data.get(
         "admin_step"
     )
 
-
-    if uid == OWNER_ID and admin_step:
-
-        parts = text.split()
-
-
-        if len(parts) != 2:
-
-            await update.message.reply_text(
-                "❌ فرمت اشتباه است."
-            )
-
-            return
-
-
-        try:
-
-            target = int(parts[0])
-
-            amount = int(parts[1])
-
-        except ValueError:
-
-            await update.message.reply_text(
-                "❌ ID و مقدار باید عدد باشند."
-            )
-
-            return
-
-
-        if amount <= 0:
-
-            await update.message.reply_text(
-                "❌ مقدار باید بیشتر از صفر باشد."
-            )
-
-            return
-
-
-        if admin_step == "add":
-
-            change_balance(
-                target,
-                amount
-            )
-
-
-            await update.message.reply_text(
-                "✅ موجودی اضافه شد."
-            )
-
-
-            try:
-
-                await context.bot.send_message(
-
-                    target,
-
-                    f"""
-💰 موجودی شما شارژ شد.
-
-+{amount:,} DOGS
-"""
-
-                )
-
-            except Exception:
-
-                pass
-
-
-        elif admin_step == "remove":
-
-            success = change_balance(
-                target,
-                -amount
-            )
-
-
-            if success:
-
-                await update.message.reply_text(
-                    "✅ موجودی کم شد."
-                )
-
-            else:
-
-                await update.message.reply_text(
-                    "❌ موجودی کاربر کافی نیست."
-                )
-
-
-        context.user_data.clear()
-
-        return
-
-
-    # ==========================
-    # USER STEPS
-    # ==========================
-
-    step = context.user_data.get(
-        "step"
-    )
-
-
     if not step:
-
         return
 
+    parts = update.message.text.split()
 
-    # ==========================
-    # DEPOSIT
-    # ==========================
+    if len(parts) != 2:
 
-    if step == "deposit":
-
-        match = re.search(
-            r"ULTRA\s+(\d+)",
-            text,
-            re.IGNORECASE
+        await update.message.reply_text(
+            "❌ فرمت اشتباه است."
         )
 
+        return
 
-        if match:
+    try:
 
-            amount = int(
-                match.group(1)
+        uid = int(parts[0])
+        amount = int(parts[1])
+
+    except ValueError:
+
+        await update.message.reply_text(
+            "❌ فقط عدد وارد کن."
+        )
+
+        return
+
+    if amount <= 0:
+
+        await update.message.reply_text(
+            "❌ مقدار باید بیشتر از صفر باشد."
+        )
+
+        return
+
+    if step == "add":
+
+        ok = await change_balance(
+            uid,
+            amount
+        )
+
+        if not ok:
+
+            await update.message.reply_text(
+                "❌ کاربر پیدا نشد."
             )
 
         else:
 
-            amount = 0
-
-
-        cur.execute(
-
-"""
-INSERT INTO requests
-(user_id,type,amount,info,status)
-VALUES(?,?,?,?,?)
-""",
-
-            (
-                uid,
-                "deposit",
-                amount,
-                text,
-                "pending"
+            new_balance = await get_balance(
+                uid
             )
-
-        )
-
-
-        request_id = cur.lastrowid
-
-        db.commit()
-
-
-        await context.bot.send_message(
-
-            OWNER_ID,
-
-            f"""
-🔔 واریزی جدید
-
-🆔 درخواست:
-{request_id}
-
-👤 کاربر:
-{uid}
-
-💰 مقدار:
-{amount:,} DOGS
-
-📝 رسید:
-{text}
-
-⏳ در انتظار تایید
-"""
-
-        )
-
-
-        await update.message.reply_text(
-            "✅ رسید برای مالک ارسال شد."
-        )
-
-
-        context.user_data.clear()
-
-        return
-
-
-    # ==========================
-    # WITHDRAW AMOUNT
-    # ==========================
-
-    if step == "withdraw_amount":
-
-        try:
-
-            amount = int(text)
-
-        except ValueError:
-
-            await update.message.reply_text(
-                "❌ فقط عدد وارد کن."
-            )
-
-            return
-
-
-        if amount <= 0:
-
-            await update.message.reply_text(
-                "❌ مقدار باید بیشتر از صفر باشد."
-            )
-
-            return
-
-
-        current_balance = get_balance(
-            uid
-        )
-
-
-        if amount > current_balance:
 
             await update.message.reply_text(
 
                 f"""
-❌ موجودی کافی نیست.
+✅ شارژ انجام شد
 
-💰 موجودی:
-{current_balance:,} DOGS
-"""
-
-            )
-
-            return
-
-
-        context.user_data[
-            "withdraw_amount"
-        ] = amount
-
-
-        context.user_data[
-            "step"
-        ] = "withdraw_id"
-
-
-        await update.message.reply_text(
-
-"""
-🆔 آیدی عددی مقصد را بفرست.
-
-مثال:
-
-123456789
-
-فقط آیدی عددی قبول می‌شود.
-"""
-
-        )
-
-        return
-
-
-    # ==========================
-    # WITHDRAW ID
-    # ==========================
-
-    if step == "withdraw_id":
-
-        try:
-
-            destination = int(text)
-
-        except ValueError:
-
-            await update.message.reply_text(
-
-                "❌ فقط آیدی عددی قبول می‌شود."
-
-            )
-
-            return
-
-
-        if destination <= 0:
-
-            await update.message.reply_text(
-                "❌ آیدی نامعتبر است."
-            )
-
-            return
-
-
-        amount = context.user_data.get(
-            "withdraw_amount"
-        )
-
-
-        if not amount:
-
-            context.user_data.clear()
-
-            await update.message.reply_text(
-                "❌ درخواست منقضی شد. دوباره شروع کن."
-            )
-
-            return
-
-
-        cur.execute(
-
-"""
-INSERT INTO requests
-(user_id,type,amount,info,status)
-VALUES(?,?,?,?,?)
-""",
-
-            (
-                uid,
-                "withdraw",
-                amount,
-                str(destination),
-                "pending"
-            )
-
-        )
-
-
-        request_id = cur.lastrowid
-
-        db.commit()
-
-
-        await context.bot.send_message(
-
-            OWNER_ID,
-
-            f"""
-🔔 برداشت جدید
-
-🆔 درخواست:
-{request_id}
-
-👤 کاربر:
+👤 ID:
 {uid}
 
-💰 مقدار:
+➕ مقدار:
 {amount:,} DOGS
 
-📌 آیدی مقصد:
-{destination}
-
-⏳ در انتظار تایید
+💰 موجودی جدید:
+{new_balance:,} DOGS
 """
-
-        )
-
-
-        await update.message.reply_text(
-            "✅ درخواست برداشت برای مالک ارسال شد."
-        )
-
-
-        context.user_data.clear()
-
-        return
-
-
-# ==============================
-# APPROVE / REJECT
-# ==============================
-
-async def request_action(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    query = update.callback_query
-
-    await query.answer()
-
-
-    if query.from_user.id != OWNER_ID:
-
-        return
-
-
-    action, request_id = query.data.split(
-        "_",
-        1
-    )
-
-
-    request_id = int(
-        request_id
-    )
-
-
-    cur.execute(
-
-"""
-SELECT
-    user_id,
-    type,
-    amount,
-    info,
-    status
-
-FROM requests
-
-WHERE id=?
-""",
-
-        (request_id,)
-
-    )
-
-
-    row = cur.fetchone()
-
-
-    if not row:
-
-        await query.edit_message_text(
-            "❌ درخواست پیدا نشد."
-        )
-
-        return
-
-
-    user_id = row[0]
-
-    req_type = row[1]
-
-    amount = row[2]
-
-    status = row[4]
-
-
-    if status != "pending":
-
-        await query.edit_message_text(
-            "ℹ️ این درخواست قبلاً بررسی شده."
-        )
-
-        return
-
-
-    # ==========================
-    # REJECT
-    # ==========================
-
-    if action == "reject":
-
-        cur.execute(
-
-"""
-UPDATE requests
-SET status='rejected'
-
-WHERE id=?
-
-AND status='pending'
-""",
-
-            (request_id,)
-
-        )
-
-
-        db.commit()
-
-
-        await query.edit_message_text(
-            "❌ درخواست رد شد."
-        )
-
-
-        try:
-
-            await context.bot.send_message(
-
-                user_id,
-
-                "❌ درخواست شما رد شد."
-
             )
 
-        except Exception:
+    elif step == "remove":
 
-            pass
-
-
-        return
-
-
-    # ==========================
-    # APPROVE DEPOSIT
-    # ==========================
-
-    if req_type == "deposit":
-
-        if amount <= 0:
-
-            await query.edit_message_text(
-
-                "❌ مبلغ واریزی از رسید تشخیص داده نشد. "
-                "مقدار را از پنل شارژ کنید."
-
-            )
-
-            return
-
-
-        change_balance(
-            user_id,
-            amount
-        )
-
-
-    # ==========================
-    # APPROVE WITHDRAW
-    # ==========================
-
-    elif req_type == "withdraw":
-
-        success = change_balance(
-            user_id,
+        ok = await change_balance(
+            uid,
             -amount
         )
 
+        if not ok:
 
-        if not success:
-
-            await query.edit_message_text(
-
-                "❌ موجودی کاربر کافی نیست؛ "
-                "برداشت تایید نشد."
-
+            await update.message.reply_text(
+                "❌ کاربر پیدا نشد یا موجودی کافی نیست."
             )
 
-            return
+        else:
 
+            new_balance = await get_balance(
+                uid
+            )
 
-    cur.execute(
+            await update.message.reply_text(
 
-"""
-UPDATE requests
+                f"""
+✅ کسر شد
 
-SET status='approved'
+👤 ID:
+{uid}
 
-WHERE id=?
-
-AND status='pending'
-""",
-
-        (request_id,)
-
-    )
-
-
-    db.commit()
-
-
-    await query.edit_message_text(
-        "✅ درخواست تایید شد."
-    )
-
-
-    try:
-
-        await context.bot.send_message(
-
-            user_id,
-
-            f"""
-✅ درخواست شما تایید شد.
-
-💰 مقدار:
+➖ مقدار:
 {amount:,} DOGS
 
-💳 موجودی فعلی:
-{get_balance(user_id):,} DOGS
+💰 موجودی جدید:
+{new_balance:,} DOGS
 """
+            )
 
-        )
-
-    except Exception:
-
-        pass
+    context.user_data.clear()
 
 
-# ==============================
+# =========================================================
 # ERROR
-# ==============================
+# =========================================================
 
 async def error_handler(
-    update: object,
-    context: ContextTypes.DEFAULT_TYPE
+    update,
+    context
 ):
 
-    logger.error(
+    log.error(
         "BOT ERROR",
         exc_info=context.error
     )
 
 
-# ==============================
+# =========================================================
 # MAIN
-# ==============================
+# =========================================================
 
-def main():
+async def main():
 
-    if TOKEN == "PUT_TOKEN_HERE":
+    if TOKEN == "PUT_NEW_BOT_TOKEN_HERE":
 
-        print(
-            "❌ TOKEN را داخل bot.py وارد کن."
+        raise RuntimeError(
+            "BOT_TOKEN را در Secrets قرار بده."
         )
 
-        return
+    await start_api()
 
+    application = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .build()
+    )
 
-    app = Application.builder().token(
-        TOKEN
-    ).build()
-
-
-    app.add_handler(
+    application.add_handler(
         CommandHandler(
             "start",
             start
         )
     )
 
-
-    app.add_handler(
-
-        CallbackQueryHandler(
-
-            request_action,
-
-            pattern=r"^(approve|reject)_\d+$"
-
-        )
-
-    )
-
-
-    app.add_handler(
-
+    application.add_handler(
         CallbackQueryHandler(
             buttons
         )
-
     )
 
-
-    app.add_handler(
-
+    application.add_handler(
         MessageHandler(
-
             filters.TEXT
             & ~filters.COMMAND,
-
-            text_handler
-
+            admin_text
         )
-
     )
 
-
-    app.add_error_handler(
+    application.add_error_handler(
         error_handler
     )
-
 
     print(
         "🚀 DOGS LIMBO BOT RUNNING"
     )
 
+    await application.initialize()
 
-    app.run_polling(
+    await application.start()
+
+    await application.updater.start_polling(
         drop_pending_updates=True
     )
+
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
 
-    main()
+    asyncio.run(main())
