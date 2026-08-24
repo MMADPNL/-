@@ -105,8 +105,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
-        reply_markup=InlineKeyboardMarkup(kb)
+    f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
+    reply_markup=InlineKeyboardMarkup(kb)
+    )
 
         async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
