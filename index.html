@@ -1,108 +1,74 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
-
 <head>
-
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
->
-
-<title>DOGS Crash</title>
+<title>DOGS Rocket 🚀</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <style>
-
-*{
-box-sizing:border-box;
-}
-
 body{
 margin:0;
-background:#080b12;
+background:#070b16;
 color:white;
-font-family:Arial,sans-serif;
+font-family:tahoma;
+text-align:center;
 }
 
-.container{
-max-width:480px;
-margin:auto;
-padding:16px;
-}
-
-.card{
-background:#121722;
-border-radius:22px;
+.box{
+margin:15px;
 padding:20px;
-margin-bottom:14px;
+background:#121a2b;
+border-radius:20px;
+}
+
+h1{
+font-size:28px;
 }
 
 .balance{
-text-align:center;
 font-size:24px;
-font-weight:bold;
-}
-
-.title{
-text-align:center;
-font-size:18px;
-margin-bottom:10px;
+color:#4cff7a;
 }
 
 .rocket{
-height:130px;
-display:flex;
-align-items:center;
-justify-content:center;
-font-size:70px;
+font-size:80px;
+height:180px;
+transition:.2s;
 }
 
-.multiplier{
-text-align:center;
-font-size:48px;
+.mult{
+font-size:50px;
 font-weight:bold;
 }
 
-.status{
-text-align:center;
-min-height:28px;
-margin-top:10px;
-color:#b8becb;
-}
-
-input{
-width:100%;
-border:0;
-outline:0;
-border-radius:14px;
+input,button{
+width:90%;
 padding:15px;
-background:#202735;
-color:white;
+margin:8px;
+border-radius:15px;
+border:0;
 font-size:18px;
-text-align:center;
 }
 
 button{
-width:100%;
-border:0;
-border-radius:14px;
-padding:15px;
-margin-top:10px;
-font-size:18px;
-font-weight:bold;
-background:#229ed9;
+background:#2196f3;
 color:white;
+font-weight:bold;
 }
 
 button:disabled{
-opacity:.4;
+opacity:.5;
 }
 
-.cash{
-background:#e84b4b;
+.win{
+color:#4cff7a;
+}
+
+.lose{
+color:red;
 }
 
 </style>
@@ -111,75 +77,55 @@ background:#e84b4b;
 
 <body>
 
-<div class="container">
+<div class="box">
 
-<div class="card">
+<h1>🐶 DOGS Rocket 🚀</h1>
 
-<div class="title">
-🐶 موجودی داگز
-</div>
-
-<div
-id="balance"
-class="balance"
->
-در حال دریافت...
+<div class="balance" id="balance">
+DOGS: 0
 </div>
 
 </div>
 
 
-<div class="card">
+<div class="box">
 
-<div
-id="rocket"
-class="rocket"
->
+<div class="rocket" id="rocket">
 🚀
 </div>
 
-<div
-id="multiplier"
-class="multiplier"
->
+<div class="mult" id="mult">
 1.00x
 </div>
 
-<div
-id="status"
-class="status"
->
-مبلغ شرط را وارد کن
+<div id="msg">
+ضریب خود را انتخاب کن
 </div>
 
 </div>
 
 
-<div class="card">
+<div class="box">
 
-<input
+<input 
 id="bet"
 type="number"
-min="1"
 value="100"
-placeholder="مبلغ داگز"
-/>
+placeholder="مبلغ DOGS">
 
-<button
-id="start"
->
-🚀 شروع بازی
+
+<input
+id="target"
+type="number"
+step="0.1"
+value="2"
+placeholder="ضریب هدف مثال 2.00">
+
+
+<button id="start">
+🚀 شروع پرواز
 </button>
 
-<button
-id="cashout"
-class="cash"
-disabled
->
-💰 برداشت
-</button>
-
-</div>
 
 </div>
 
@@ -190,323 +136,239 @@ const tg =
 window.Telegram.WebApp;
 
 tg.ready();
-tg.expand();
 
 
-const headers = {
-"Content-Type":
-"application/json",
-
-"X-Telegram-Init-Data":
-tg.initData
-};
+let money=0;
+let running=false;
+let timer;
 
 
-let balance = 0;
+async function load(){
 
-let gameId = null;
+let r=await fetch(
+"/api/balance",
+{
+method:"POST",
+headers:{
+"X-Telegram-Init-Data":tg.initData
+}
+});
 
-let crash = 0;
+let d=await r.json();
 
-let multiplier = 1;
-
-let bet = 0;
-
-let playing = false;
-
-let timer = null;
-
-
-function setBalance(value){
-
-balance = Number(value);
+money=d.dogs;
 
 document.getElementById(
 "balance"
-).textContent =
-balance.toLocaleString(
-"en-US"
-) + " DOGS";
-
-}
-
-
-function setStatus(text){
-
-document.getElementById(
-"status"
-).textContent = text;
-
-}
-
-
-async function api(
-url,
-data = {}
-){
-
-const response =
-await fetch(
-url,
-{
-method:"POST",
-headers:headers,
-body:JSON.stringify(data)
-}
-);
-
-const result =
-await response.json();
-
-if(!response.ok){
-
-throw new Error(
-result.error ||
-"خطا"
-);
-
-}
-
-return result;
-
-}
-
-
-async function loadBalance(){
-
-try{
-
-const result =
-await api(
-"/api/balance"
-);
-
-setBalance(
-result.dogs
-);
-
-}
-catch(error){
-
-setStatus(
-error.message
-);
-
-}
-
-}
-
-
-function resetButtons(){
-
-playing = false;
-
-document.getElementById(
-"start"
-).disabled = false;
-
-document.getElementById(
-"cashout"
-).disabled = true;
+).innerHTML =
+"🐶 DOGS: "+money;
 
 }
 
 
 document.getElementById(
 "start"
-).onclick =
-async function(){
+).onclick=async()=>{
 
-if(playing){
-return;
-}
 
-bet =
-Math.floor(
+if(running)return;
+
+
+let bet=
 Number(
-document.getElementById(
-"bet"
-).value
-)
+document.getElementById("bet").value
 );
 
-if(!bet || bet < 1){
 
-setStatus(
-"مبلغ شرط نامعتبر است"
+let target=
+Number(
+document.getElementById("target").value
 );
+
+
+
+if(target<1.1){
+
+alert("ضریب اشتباه است");
 
 return;
 
 }
 
 
-try{
 
-const result =
-await api(
+let start=
+
+await fetch(
 "/api/start-game",
 {
-bet:bet
-}
-);
-
-gameId =
-result.game_id;
-
-crash =
-Number(
-result.crash
-);
-
-setBalance(
-result.dogs
-);
-
-multiplier = 1;
-
-playing = true;
-
-document.getElementById(
-"start"
-).disabled = true;
-
-document.getElementById(
-"cashout"
-).disabled = false;
-
-setStatus(
-"🚀 موشک پرواز کرد!"
-);
-
-
-clearInterval(timer);
-
-timer =
-setInterval(
-function(){
-
-multiplier =
-Number(
-(
-multiplier +
-0.01 +
-multiplier * 0.012
-).toFixed(2)
-);
-
-document.getElementById(
-"multiplier"
-).textContent =
-multiplier.toFixed(2) +
-"x";
-
-
-if(multiplier >= crash){
-
-clearInterval(timer);
-
-setStatus(
-"💥 موشک ترکید! باختی."
-);
-
-resetButtons();
-
-loadBalance();
-
-}
-
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+"X-Telegram-Init-Data":tg.initData
 },
-100
-);
+
+body:JSON.stringify({
+bet:bet
+})
+
+});
+
+
+let data=
+await start.json();
+
+
+
+if(data.error){
+
+alert(data.error);
+
+return;
 
 }
-catch(error){
 
-setStatus(
-error.message
-);
 
-}
 
-};
+money=data.dogs;
 
 
 document.getElementById(
-"cashout"
-).onclick =
-async function(){
-
-if(!playing){
-return;
-}
-
-const currentMultiplier =
-multiplier;
+"balance"
+).innerHTML=
+"🐶 DOGS: "+money;
 
 
-try{
 
-const result =
-await api(
+running=true;
+
+
+
+let m=1;
+
+
+document.getElementById(
+"msg"
+).innerHTML=
+"🚀 موشک پرواز کرد";
+
+
+timer=setInterval(()=>{
+
+
+m+=0.01;
+
+
+document.getElementById(
+"mult"
+).innerHTML=
+m.toFixed(2)+"x";
+
+
+
+document.getElementById(
+"rocket"
+).style.transform=
+"translateY(-"+m*10+"px)";
+
+
+
+if(m>=target){
+
+clearInterval(timer);
+
+
+document.getElementById(
+"msg"
+).innerHTML=
+"🎉 بردی!";
+
+
+document.getElementById(
+"msg"
+).className="win";
+
+
+
+fetch(
 "/api/cashout",
 {
-game_id:gameId,
-multiplier:currentMultiplier
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+"X-Telegram-Init-Data":tg.initData
+},
+
+body:JSON.stringify({
+
+game_id:data.game_id,
+
+multiplier:target
+
+})
+
+})
+.then(r=>r.json())
+.then(x=>{
+
+money=x.dogs;
+
+document.getElementById(
+"balance"
+).innerHTML=
+"🐶 DOGS: "+money;
+
+});
+
+
+running=false;
+
+
 }
-);
+
+
+
+if(m>=data.crash){
+
 
 clearInterval(timer);
 
-if(result.lost){
 
-setStatus(
-"💥 دیر برداشت کردی؛ باختی."
-);
-
-setBalance(
-result.dogs
-);
-
-resetButtons();
-
-return;
-
-}
+document.getElementById(
+"rocket"
+).innerHTML="💥";
 
 
-setBalance(
-result.dogs
-);
+document.getElementById(
+"msg"
+).innerHTML=
+"💥 موشک ترکید!";
 
-setStatus(
-"🎉 بردی! +" +
-Number(
-result.payout
-).toLocaleString(
-"en-US"
-) +
-" DOGS"
-);
 
-resetButtons();
+document.getElementById(
+"msg"
+).className="lose";
+
+
+running=false;
+
 
 }
-catch(error){
 
-setStatus(
-error.message
-);
 
-}
+
+},50);
+
+
 
 };
 
 
-loadBalance();
+
+load();
+
 
 </script>
 
 </body>
-
-  </html>
+</html>
