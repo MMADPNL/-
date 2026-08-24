@@ -1,8 +1,22 @@
 import os
 import sqlite3
 import logging
+import time
+import hmac
+import hashlib
+import json
+import urllib.parse
+import secrets
+from threading import Thread
 
-from telegram import Update
+from flask import Flask, request, jsonify, send_from_directory
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -13,7 +27,8 @@ from telegram.ext import (
 # SETTINGS
 # =========================================================
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN", "")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 
 OWNER_ID = 8552447077
 
@@ -22,18 +37,25 @@ START_DOGS = 1_000
 
 DB_NAME = "bot.db"
 
-
 # =========================================================
 # LOGGING
 # =========================================================
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
 )
 
 logger = logging.getLogger(__name__)
 
+# =========================================================
+# FLASK
+# =========================================================
+
+web = Flask(
+    __name__,
+    static_folder="webapp",
+)
 
 # =========================================================
 # DATABASE
@@ -41,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 def get_db():
     conn = sqlite3.connect(DB_NAME)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -54,7 +76,19 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             username TEXT DEFAULT '',
             first_name TEXT DEFAULT '',
-            dogs INTEGER NOT NULL DEFAULT 1000
+            dogs INTEGER NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS games (
+            game_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            bet INTEGER NOT NULL,
+            crash REAL NOT NULL,
+            status TEXT NOT NULL,
+            payout INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL
         )
     """)
 
@@ -63,23 +97,22 @@ def init_db():
 
 
 # =========================================================
-# USER
+# USERS
 # =========================================================
 
-def ensure_user(user):
+def ensure_user(user_id, username="", first_name=""):
+
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute(
+    row = cur.execute(
         "SELECT dogs FROM users WHERE user_id = ?",
-        (user.id,)
-    )
-
-    row = cur.fetchone()
+        (user_id,),
+    ).fetchone()
 
     if row is None:
 
-        if user.id == OWNER_ID:
+        if user_id == OWNER_ID:
             dogs = OWNER_DOGS
         else:
             dogs = START_DOGS
@@ -91,27 +124,29 @@ def ensure_user(user):
             VALUES (?, ?, ?, ?)
             """,
             (
-                user.id,
-                user.username or "",
-                user.first_name or "",
-                dogs
-            )
+                user_id,
+                username or "",
+                first_name or "",
+                dogs,
+            ),
         )
 
     else:
-        dogs = row[0]
+
+        dogs = row["dogs"]
 
         cur.execute(
             """
             UPDATE users
-            SET username = ?, first_name = ?
+            SET username = ?,
+                first_name = ?
             WHERE user_id = ?
             """,
             (
-                user.username or "",
-                user.first_name or "",
-                user.id
-            )
+                username or "",
+                first_name or "",
+                user_id,
+            ),
         )
 
     conn.commit()
@@ -120,203 +155,522 @@ def ensure_user(user):
     return dogs
 
 
-def get_dogs(user_id):
+def get_balance(user_id):
+
     conn = get_db()
-    cur = conn.cursor()
 
-    cur.execute(
+    row = conn.execute(
         "SELECT dogs FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-
-    row = cur.fetchone()
+        (user_id,),
+    ).fetchone()
 
     conn.close()
 
     if row is None:
         return None
 
-    return row[0]
+    return int(row["dogs"])
 
 
-def change_dogs(user, amount):
-    conn = get_db()
-    cur = conn.cursor()
+# =========================================================
+# TELEGRAM WEBAPP SECURITY
+# =========================================================
 
-    cur.execute(
-        "SELECT dogs FROM users WHERE user_id = ?",
-        (user.id,)
-    )
+def validate_telegram_data(init_data):
 
-    row = cur.fetchone()
+    if not TOKEN or not init_data:
+        return None
 
-    if row is None:
+    try:
 
-        if user.id == OWNER_ID:
-            dogs = OWNER_DOGS
-        else:
-            dogs = START_DOGS
-
-        cur.execute(
-            """
-            INSERT INTO users
-            (user_id, username, first_name, dogs)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                user.id,
-                user.username or "",
-                user.first_name or "",
-                dogs
+        data = dict(
+            urllib.parse.parse_qsl(
+                init_data,
+                keep_blank_values=True,
             )
         )
 
-    else:
-        dogs = row[0]
+        received_hash = data.pop("hash", None)
 
-    new_dogs = dogs + amount
+        if not received_hash:
+            return None
 
-    if new_dogs < 0:
+        auth_date = int(
+            data.get("auth_date", "0")
+        )
+
+        # Session expires after 24 hours
+        if time.time() - auth_date > 86400:
+            return None
+
+        check_string = "\n".join(
+            f"{key}={data[key]}"
+            for key in sorted(data)
+        )
+
+        secret_key = hmac.new(
+            b"WebAppData",
+            TOKEN.encode(),
+            hashlib.sha256,
+        ).digest()
+
+        calculated_hash = hmac.new(
+            secret_key,
+            check_string.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(
+            calculated_hash,
+            received_hash,
+        ):
+            return None
+
+        telegram_user = json.loads(
+            data["user"]
+        )
+
+        return telegram_user
+
+    except Exception as e:
+
+        logger.warning(
+            "Telegram validation error: %s",
+            e,
+        )
+
+        return None
+
+
+def get_web_user():
+
+    init_data = request.headers.get(
+        "X-Telegram-Init-Data",
+        "",
+    )
+
+    return validate_telegram_data(
+        init_data
+    )
+
+
+# =========================================================
+# CRASH POINT
+# =========================================================
+
+def generate_crash():
+
+    # Demo-only virtual game.
+    # Generates a value between 1.00 and 10.00.
+
+    number = secrets.randbelow(900) + 100
+
+    return round(
+        number / 100,
+        2,
+    )
+
+
+# =========================================================
+# WEB APP
+# =========================================================
+
+@web.get("/")
+def home():
+
+    return send_from_directory(
+        "webapp",
+        "index.html",
+    )
+
+
+# =========================================================
+# BALANCE API
+# =========================================================
+
+@web.post("/api/balance")
+def balance_api():
+
+    user = get_web_user()
+
+    if not user:
+        return jsonify({
+            "error": "جلسه تلگرام معتبر نیست"
+        }), 401
+
+    user_id = int(user["id"])
+
+    dogs = ensure_user(
+        user_id,
+        user.get("username"),
+        user.get("first_name"),
+    )
+
+    return jsonify({
+        "ok": True,
+        "dogs": dogs,
+    })
+
+
+# =========================================================
+# START GAME
+# =========================================================
+
+@web.post("/api/start-game")
+def start_game():
+
+    user = get_web_user()
+
+    if not user:
+        return jsonify({
+            "error": "جلسه تلگرام معتبر نیست"
+        }), 401
+
+    user_id = int(user["id"])
+
+    ensure_user(
+        user_id,
+        user.get("username"),
+        user.get("first_name"),
+    )
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+        bet = int(
+            data.get("bet", 0)
+        )
+    except Exception:
+        bet = 0
+
+    if bet < 1:
+        return jsonify({
+            "error": "مبلغ شرط نامعتبر است"
+        }), 400
+
+    conn = get_db()
+
+    try:
+
+        # Check balance
+        row = conn.execute(
+            "SELECT dogs FROM users WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not row:
+            return jsonify({
+                "error": "کاربر پیدا نشد"
+            }), 400
+
+        balance = int(row["dogs"])
+
+        if balance < bet:
+            return jsonify({
+                "error": "داگز کافی نیست",
+                "dogs": balance,
+            }), 400
+
+        # Prevent multiple active games
+        active = conn.execute(
+            """
+            SELECT game_id
+            FROM games
+            WHERE user_id = ?
+            AND status = 'active'
+            """,
+            (user_id,),
+        ).fetchone()
+
+        if active:
+            return jsonify({
+                "error": "یک بازی فعال دارید"
+            }), 400
+
+        # Deduct bet
+        conn.execute(
+            """
+            UPDATE users
+            SET dogs = dogs - ?
+            WHERE user_id = ?
+            """,
+            (
+                bet,
+                user_id,
+            ),
+        )
+
+        # Generate server-side crash
+        crash = generate_crash()
+
+        game_id = secrets.token_urlsafe(
+            18
+        )
+
+        conn.execute(
+            """
+            INSERT INTO games
+            (game_id, user_id, bet, crash, status, payout, created_at)
+            VALUES (?, ?, ?, ?, 'active', 0, ?)
+            """,
+            (
+                game_id,
+                user_id,
+                bet,
+                crash,
+                int(time.time()),
+            ),
+        )
+
+        conn.commit()
+
+        new_balance = get_balance(
+            user_id
+        )
+
+        return jsonify({
+            "ok": True,
+            "game_id": game_id,
+            "crash": crash,
+            "dogs": new_balance,
+        })
+
+    finally:
         conn.close()
-        return False, dogs
 
-    cur.execute(
-        """
-        UPDATE users
-        SET dogs = ?, username = ?, first_name = ?
-        WHERE user_id = ?
-        """,
-        (
-            new_dogs,
-            user.username or "",
-            user.first_name or "",
-            user.id
+
+# =========================================================
+# CASHOUT
+# =========================================================
+
+@web.post("/api/cashout")
+def cashout():
+
+    user = get_web_user()
+
+    if not user:
+        return jsonify({
+            "error": "جلسه تلگرام معتبر نیست"
+        }), 401
+
+    user_id = int(user["id"])
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    game_id = str(
+        data.get("game_id", "")
+    )
+
+    try:
+        multiplier = float(
+            data.get("multiplier", 0)
         )
-    )
+    except Exception:
+        multiplier = 0
 
-    conn.commit()
-    conn.close()
+    if not game_id:
+        return jsonify({
+            "error": "بازی نامعتبر است"
+        }), 400
 
-    return True, new_dogs
+    conn = get_db()
 
+    try:
 
-# =========================================================
-# START
-# =========================================================
+        game = conn.execute(
+            """
+            SELECT *
+            FROM games
+            WHERE game_id = ?
+            AND user_id = ?
+            """,
+            (
+                game_id,
+                user_id,
+            ),
+        ).fetchone()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not game:
+            return jsonify({
+                "error": "بازی پیدا نشد"
+            }), 404
 
-    user = update.effective_user
+        if game["status"] != "active":
+            return jsonify({
+                "error": "این بازی قبلاً تمام شده"
+            }), 400
 
-    dogs = ensure_user(user)
-
-    await update.message.reply_text(
-        f"🎮 سلام {user.first_name}!\n\n"
-        f"🐶 داگز شما: {dogs:,}\n\n"
-        f"برای دیدن موجودی:\n"
-        f"/balance\n\n"
-        f"برای تست برد:\n"
-        f"/win\n\n"
-        f"برای تست باخت:\n"
-        f"/lose"
-    )
-
-
-# =========================================================
-# BALANCE
-# =========================================================
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user = update.effective_user
-
-    ensure_user(user)
-
-    dogs = get_dogs(user.id)
-
-    await update.message.reply_text(
-        f"👤 {user.first_name}\n\n"
-        f"🐶 موجودی داگز: {dogs:,}"
-    )
-
-
-# =========================================================
-# TEST WIN
-# =========================================================
-
-async def win(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user = update.effective_user
-
-    success, dogs = change_dogs(user, 100)
-
-    if not success:
-        await update.message.reply_text(
-            "❌ خطا در تغییر موجودی."
+        crash = float(
+            game["crash"]
         )
-        return
 
-    await update.message.reply_text(
-        f"🎉 +100 داگز\n\n"
-        f"🐶 موجودی جدید: {dogs:,}"
-    )
+        # Cannot cash out after crash
+        if multiplier >= crash:
 
+            conn.execute(
+                """
+                UPDATE games
+                SET status = 'lost'
+                WHERE game_id = ?
+                """,
+                (game_id,),
+            )
 
-# =========================================================
-# TEST LOSE
-# =========================================================
+            conn.commit()
 
-async def lose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            return jsonify({
+                "ok": False,
+                "lost": True,
+                "dogs": get_balance(
+                    user_id
+                ),
+            })
 
-    user = update.effective_user
+        # Minimum cashout
+        if multiplier < 1.01:
+            return jsonify({
+                "error": "ضریب برداشت نامعتبر است"
+            }), 400
 
-    success, dogs = change_dogs(user, -100)
-
-    if not success:
-        await update.message.reply_text(
-            "❌ داگز کافی نیست."
+        multiplier = round(
+            multiplier,
+            2,
         )
-        return
 
-    await update.message.reply_text(
-        f"💸 -100 داگز\n\n"
-        f"🐶 موجودی جدید: {dogs:,}"
-    )
-
-
-# =========================================================
-# OWNER
-# =========================================================
-
-async def owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user = update.effective_user
-
-    if user.id != OWNER_ID:
-        await update.message.reply_text(
-            "⛔ این دستور فقط برای مالک ربات است."
+        bet = int(
+            game["bet"]
         )
-        return
 
-    await update.message.reply_text(
-        f"👑 مالک ربات\n\n"
-        f"🆔 ID: {OWNER_ID}\n"
-        f"🐶 داگز: {get_dogs(OWNER_ID):,}"
-    )
+        payout = int(
+            bet * multiplier
+        )
+
+        conn.execute(
+            """
+            UPDATE users
+            SET dogs = dogs + ?
+            WHERE user_id = ?
+            """,
+            (
+                payout,
+                user_id,
+            ),
+        )
+
+        conn.execute(
+            """
+            UPDATE games
+            SET status = 'won',
+                payout = ?
+            WHERE game_id = ?
+            """,
+            (
+                payout,
+                game_id,
+            ),
+        )
+
+        conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "payout": payout,
+            "dogs": get_balance(
+                user_id
+            ),
+        })
+
+    finally:
+        conn.close()
 
 
 # =========================================================
-# ERROR HANDLER
+# TELEGRAM COMMANDS
 # =========================================================
 
-async def error_handler(
-    update: object,
-    context: ContextTypes.DEFAULT_TYPE
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
 ):
 
-    logger.error(
-        "Bot error:",
-        exc_info=context.error
+    user = update.effective_user
+
+    dogs = ensure_user(
+        user.id,
+        user.username,
+        user.first_name,
+    )
+
+    if WEBAPP_URL:
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "🚀 بازی موشک",
+                    web_app=WebAppInfo(
+                        url=WEBAPP_URL
+                    ),
+                )
+            ]
+        ])
+
+        await update.message.reply_text(
+            f"سلام {user.first_name} 👋\n\n"
+            f"🐶 داگز: {dogs:,}\n\n"
+            f"برای ورود به بازی موشک "
+            f"روی دکمه زیر بزن.",
+            reply_markup=keyboard,
+        )
+
+    else:
+
+        await update.message.reply_text(
+            f"سلام {user.first_name} 👋\n\n"
+            f"🐶 داگز: {dogs:,}\n\n"
+            f"⚠️ WEBAPP_URL تنظیم نشده."
+        )
+
+
+async def balance_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    user = update.effective_user
+
+    dogs = ensure_user(
+        user.id,
+        user.username,
+        user.first_name,
+    )
+
+    await update.message.reply_text(
+        f"🐶 موجودی داگز شما:\n\n"
+        f"{dogs:,} DOGS"
+    )
+
+
+# =========================================================
+# WEB SERVER
+# =========================================================
+
+def run_web():
+
+    port = int(
+        os.getenv(
+            "PORT",
+            "8080",
+        )
+    )
+
+    web.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
     )
 
 
@@ -327,54 +681,46 @@ async def error_handler(
 def main():
 
     if not TOKEN:
-
-        print("❌ BOT_TOKEN پیدا نشد.")
-        print("")
-        print("در Environment / Secrets این مقدار را بساز:")
-        print("BOT_TOKEN = توکن ربات")
-        return
+        raise RuntimeError(
+            "BOT_TOKEN تنظیم نشده است."
+        )
 
     init_db()
 
-    app = Application.builder().token(TOKEN).build()
+    Thread(
+        target=run_web,
+        daemon=True,
+    ).start()
 
-    app.add_handler(
-        CommandHandler("start", start)
+    application = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .build()
     )
 
-    app.add_handler(
-        CommandHandler("balance", balance)
+    application.add_handler(
+        CommandHandler(
+            "start",
+            start,
+        )
     )
 
-    app.add_handler(
-        CommandHandler("win", win)
+    application.add_handler(
+        CommandHandler(
+            "balance",
+            balance_command,
+        )
     )
 
-    app.add_handler(
-        CommandHandler("lose", lose)
+    print(
+        "🚀 BOT + CRASH MINI APP STARTED"
     )
 
-    app.add_handler(
-        CommandHandler("owner", owner)
-    )
-
-    app.add_error_handler(error_handler)
-
-    print("================================")
-    print("🚀 BOT STARTED")
-    print("🐶 DOGS SYSTEM ENABLED")
-    print(f"👑 OWNER ID: {OWNER_ID}")
-    print(f"🐶 OWNER DOGS: {OWNER_DOGS}")
-    print("================================")
-
-    app.run_polling(
+    application.run_polling(
         drop_pending_updates=True
     )
 
-
-# =========================================================
-# RUN
-# =========================================================
 
 if __name__ == "__main__":
     main()
