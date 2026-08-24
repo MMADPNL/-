@@ -249,3 +249,247 @@ async def admin_request_buttons(update, context):
 
 # این خط را هم به هندلرها اضافه کن:
 # app.add_handler(CallbackQueryHandler(admin_request_buttons))
+# DOGS LIMBO ADMIN PANEL + HANDLERS
+# این بخش آماده اضافه شدن به bot.py است
+
+BOT_STATUS = True
+
+
+async def admin_panel(update, context):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("❌ دسترسی ندارید")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("💰 شارژ کاربر", callback_data="adm_add")],
+        [InlineKeyboardButton("➖ کسر موجودی", callback_data="adm_remove")],
+        [InlineKeyboardButton("📊 آمار", callback_data="adm_stats")],
+        [InlineKeyboardButton("🟢/🔴 وضعیت ربات", callback_data="adm_toggle")]
+    ]
+
+    await update.message.reply_text(
+        "👑 پنل مدیریت DOGS",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def admin_panel_buttons(update, context):
+    global BOT_STATUS
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != OWNER_ID:
+        return
+
+    if query.data == "adm_stats":
+        cur.execute("SELECT COUNT(*) FROM users")
+        count = cur.fetchone()[0]
+        await query.message.reply_text(f"📊 کاربران: {count}")
+
+    elif query.data == "adm_toggle":
+        BOT_STATUS = not BOT_STATUS
+        await query.message.reply_text(
+            "وضعیت: " + ("🟢 روشن" if BOT_STATUS else "🔴 خاموش")
+        )
+
+    elif query.data == "adm_add":
+        context.user_data["admin_action"] = "add"
+        await query.message.reply_text("فرمت:\nآیدی مقدار\nمثال:\n123456 5000")
+
+    elif query.data == "adm_remove":
+        context.user_data["admin_action"] = "remove"
+        await query.message.reply_text("فرمت:\nآیدی مقدار\nمثال:\n123456 1000")
+
+
+async def admin_text(update, context):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    action = context.user_data.get("admin_action")
+
+    if not action:
+        return
+
+    try:
+        uid, amount = update.message.text.split()
+        uid = int(uid)
+        amount = int(amount)
+    except:
+        await update.message.reply_text("❌ فرمت اشتباه")
+        return
+
+    if action == "add":
+        change_balance(uid, amount)
+        await update.message.reply_text("✅ اضافه شد")
+
+    if action == "remove":
+        change_balance(uid, -amount)
+        await update.message.reply_text("✅ کم شد")
+
+    context.user_data.clear()
+
+
+# هندلرهای آماده:
+app.add_handler(CommandHandler("admin", admin_panel))
+app.add_handler(CallbackQueryHandler(admin_panel_buttons))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text))
+# ==============================
+# تایید و رد واریز و برداشت
+# ==============================
+
+async def request_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != OWNER_ID:
+        return
+
+
+    data = query.data.split("_")
+
+
+    # تایید واریز
+    if data[0] == "deposit":
+
+        req_id = int(data[2])
+
+        cur.execute(
+            """
+            SELECT user_id, amount
+            FROM requests
+            WHERE id=?
+            """,
+            (req_id,)
+        )
+
+        row = cur.fetchone()
+
+        if not row:
+            return
+
+
+        uid, amount = row
+
+
+        if data[1] == "ok":
+
+            change_balance(uid, amount)
+
+
+            cur.execute(
+                """
+                UPDATE requests
+                SET status='approved'
+                WHERE id=?
+                """,
+                (req_id,)
+            )
+
+
+            await context.bot.send_message(
+                uid,
+                "✅ واریز شما تایید شد و موجودی اضافه شد"
+            )
+
+
+            await query.edit_message_text(
+                "✅ واریز تایید شد"
+            )
+
+
+        else:
+
+
+            cur.execute(
+                """
+                UPDATE requests
+                SET status='rejected'
+                WHERE id=?
+                """,
+                (req_id,)
+            )
+
+
+            await context.bot.send_message(
+                uid,
+                "❌ واریز شما رد شد"
+            )
+
+
+            await query.edit_message_text(
+                "❌ واریز رد شد"
+            )
+
+
+
+    # تایید برداشت
+    elif data[0] == "withdraw":
+
+
+        uid = int(data[2])
+        amount = int(data[3])
+
+
+        if data[1] == "ok":
+
+
+            if balance(uid) >= amount:
+
+                change_balance(
+                    uid,
+                    -amount
+                )
+
+
+                await context.bot.send_message(
+                    uid,
+                    f"""
+✅ برداشت تایید شد
+
+💰 مقدار:
+{amount} DOGS
+"""
+                )
+
+            else:
+
+                await query.message.reply_text(
+                    "❌ موجودی کافی نیست"
+                )
+
+
+
+            await query.edit_message_text(
+                "✅ برداشت تایید شد"
+            )
+
+
+        else:
+
+
+            await context.bot.send_message(
+                uid,
+                "❌ برداشت شما رد شد"
+            )
+
+
+            await query.edit_message_text(
+                "❌ برداشت رد شد"
+            )
+
+
+
+# ==============================
+# جلوگیری از چند اجرای ربات
+# ==============================
+
+print("🚀 DOGS LIMBO FINAL RUNNING")
+
+
+app.add_handler(
+    CallbackQueryHandler(
+        request_confirm
+    )
+)
