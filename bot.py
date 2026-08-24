@@ -108,7 +108,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     f"🚀 DOGS LIMBO\n\n💰 Balance: {balance(uid)} DOGS",
     reply_markup=InlineKeyboardMarkup(kb)
     )
-
         async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
